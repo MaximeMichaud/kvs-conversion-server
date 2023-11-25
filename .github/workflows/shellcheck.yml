@@ -1,0 +1,24 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+name: "ShellCheck"
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run ShellCheck on specified scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          path: |
+            kvs-conversion-server.sh
+            create_folders.sh
+            run-vsftpd.sh
