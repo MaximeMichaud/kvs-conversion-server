@@ -37,6 +37,7 @@ RUN mkdir -p /home/vsftpd/ \
 
 # Copy configuration files
 COPY vsftpd-base.conf /etc/vsftpd/vsftpd-base.conf
+COPY vsftpd-ftp.conf /etc/vsftpd/vsftpd-ftp.conf
 COPY run-vsftpd.sh /usr/sbin/
 RUN chmod +x /usr/sbin/run-vsftpd.sh
 
