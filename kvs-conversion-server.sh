@@ -27,14 +27,14 @@ get_ipv4_mode() {
   echo "Choose the method to acquire IPv4 address:"
   echo "1. Automatic (detect via Internet)"
   echo "2. Manual (user input)"
-  read -p "Enter your choice (1 or 2, default is 1): " ipv4_mode_choice
+  read -r -p "Enter your choice (1 or 2, default is 1): " ipv4_mode_choice
   ipv4_mode_choice=${ipv4_mode_choice:-1}
 }
 
 # Function to get IPv4 address based on the chosen mode
 get_ipv4_address() {
   if [[ $ipv4_mode_choice == 2 ]]; then
-    read -p "Enter the IPv4 address: " ipv4_address
+    read -r -p "Enter the IPv4 address: " ipv4_address
   else
     ipv4_address=$(curl 'https://api.ipify.org')
   fi
@@ -55,11 +55,11 @@ get_network_interface() {
 
 # Prompt for FTP user and password
 echo "Please enter FTP configuration details:"
-read -p "Enter FTP username: " input_ftp_user
-read -p "Enter FTP password: " input_ftp_pass
+read -r -p "Enter FTP username: " input_ftp_user
+read -r -p "Enter FTP password: " input_ftp_pass
 
 # Prompt for number of folders to create
-read -p "Enter the number of FTP directories to create (default is 5): " num_folders
+read -r -p "Enter the number of FTP directories to create (default is 5): " num_folders
 NUM_FOLDERS=${num_folders:-5}
 
 # Ask for IPv4 acquisition mode
