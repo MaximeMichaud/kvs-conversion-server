@@ -2,9 +2,17 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'kvs-conversion-server.sh'
+      - 'create_folders.sh'
+      - 'run-vsftpd.sh'
   pull_request:
     branches:
       - main
+    paths:
+      - 'kvs-conversion-server.sh'
+      - 'create_folders.sh'
+      - 'run-vsftpd.sh'
 
 name: "ShellCheck"
 
