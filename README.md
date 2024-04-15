@@ -17,7 +17,7 @@ bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-se
 
 ## Compatibility
 
-Docker Dependency: This script requires Docker to be installed and functioning on your system. Docker provides the necessary isolation and environment consistency to run the conversion software reliably.
+Docker Dependency: This script requires Docker to be installed and functioning on your system. Docker provides the necessary isolation and environment consistency to run the conversion software reliably. The script will automatically check if Docker is installed on your system. If it is not found, you will be prompted to install Docker using the official installation script. Please note that installing Docker may require virtualization to be enabled on your system and administrative (root) privileges to install the Docker package.
 
 System Architecture: The script and its dependencies have been tested exclusively on amd64 architectures. Ensure your system complies with this specification to guarantee compatibility.
 
@@ -34,15 +34,28 @@ The actual performance can vary based on the specific video formats and the conv
 
 ## Features
 
-- **Automated KVS Setup**: Installs all necessary dependencies, sets up the database, configures cron jobs, and prepares the webserver. Tailored to meet the [KVS requirements](https://www.kernel-video-sharing.com/en/requirements/).
+- **Automated KVS Setup**: Installs all necessary dependencies and configures cron jobs, tailored to meet the [KVS requirements](https://www.kernel-video-sharing.com/en/requirements/). For more details on video conversion engines and speeds, see [Video Conversion Engine and Speed](https://forum.kernel-video-sharing.com/topic/50-video-conversion-engine-and-video-conversion-speed/). To learn how to add a remote conversion server in KVS, visit [Adding a Remote Conversion Server in KVS](https://forum.kernel-video-sharing.com/topic/118-how-to-add-remote-conversion-server-in-kvs/).
 - **Extended PHP Support**: Uses Sury's repository to provide extended PHP version support, incorporating security updates from [Freexian's Debian LTS project](https://www.freexian.com/lts/debian/).
 - **Automated Updates**: Enables automatic updates for all installed packages and added repositories to keep the server secure and up-to-date.
-- [TO-DO] **Optional IonCube Installation**: Provides the option to install or skip IonCube depending on licensing needs.
 
 
 ## To-Do
 
-TO WRITE
+- **Optional IonCube Installation**: Add functionality to optionally install IonCube depending on the user's licensing needs. This will allow users to comply with software requirements that may require encoded PHP files.
+
+- **Container Configuration**: Develop the ability to limit CPU usage for the Docker container. This will include user options to customize these limits based on their system capabilities and conversion needs.
+
+- **Network Configuration**: Implement checks to determine if the outbound IPv4 configuration can open ports. Additionally, provide options to configure the server to operate solely on local networks if necessary to enhance security and compliance with internal network policies.
+
+- **Tailscale Support for Restricted Environments**: Integrate Tailscale to enable the conversion server to function effectively even in more restricted network environments. This setup facilitates secure and simpler VPN access, eliminating the need for complex networking configurations.
+
+- **FFmpeg Version Selection**: Implement the option for users to select between different FFmpeg versions (5.x, 6.x, 7.x) depending on their specific requirements for video processing capabilities and compatibility with various codecs and formats.
+
+- **Enabling SSL with vsftpd (FTPS)**: Provide the option to configure SSL for vsftpd to enhance security by enabling FTPS. This feature will allow encrypted file transfers, protecting data integrity and confidentiality during file uploads and downloads.
+
+- **Unattended Upgrades**: Implement unattended upgrades to ensure that all packages, especially those from sury.org, are updated automatically. This will reduce maintenance overhead and improve security by keeping the system updated with the latest patches without user intervention.
+
+View the full project details and progress [here](https://github.com/users/MaximeMichaud/projects/3).
 
 ## Supports
 
@@ -50,6 +63,7 @@ The technologies used depend on what KVS supports, which means that some may not
 
 * VsFTPd 3.0.3
 * PHP 7.4 or PHP 8.1 (since 6.2.0) (with sury.org and IonCube)
+* FFmpeg 5.1 (LTS)
 
 ## Customization and Limitations
 
