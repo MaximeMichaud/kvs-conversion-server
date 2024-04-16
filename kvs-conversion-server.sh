@@ -81,28 +81,30 @@ get_total_cores() {
 
 # Function to ask for CPU limits
 get_cpu_limits() {
+  get_total_cores # Ensure $total_cores is always defined
   while true; do
     echo "Do you want to limit CPU usage for the Docker container? (yes/no)"
-    read -r -p "Enter your choice (default no): " limit_cpu
+    read -r -p "Enter your choice (default no, which uses all available cores): " limit_cpu
     case $limit_cpu in
     [Yy] | [Yy][Ee][Ss])
-      get_total_cores
-      read -r -p "Enter the number of CPU cores to use (e.g., 0.5 for half a core, up to $total_cores cores): " cpu_cores
-      # Using awk to handle decimal comparison
-      is_greater=$(awk -v num="$cpu_cores" -v max="$total_cores" 'BEGIN {print (num > max) ? "1" : "0"}')
-      if [ "$is_greater" -eq 1 ]; then
-        echo "Error: You cannot allocate more than $total_cores cores."
-        continue
-      fi
-      CPU_LIMIT="--cpus=$cpu_cores"
-      break
+      while true; do
+        read -r -p "Enter the number of CPU cores to use (e.g., 0.5 for half a core, up to $total_cores cores): " cpu_cores
+        is_greater=$(awk -v num="$cpu_cores" -v max="$total_cores" 'BEGIN {print (num > max) ? "1" : "0"}')
+        if [ "$is_greater" -eq 1 ]; then
+          echo "Error: You cannot allocate more than $total_cores cores."
+          continue # Valid use of continue within this nested loop
+        fi
+        CPU_LIMIT="$cpu_cores"
+        break 2 # Exit both loops if a valid number has been entered
+      done
       ;;
     [Nn] | [Nn][Oo] | "")
-      CPU_LIMIT=""
-      break
+      CPU_LIMIT="$total_cores" # Use all available cores if no limit is specified
+      break                    # Exit the loop
       ;;
     *)
-      echo "Invalid input. Please enter 'yes' or 'no'."
+      echo "Invalid input. Please enter 'yes' (y) or 'no' (n). Exiting script."
+      exit 1
       ;;
     esac
   done
@@ -250,7 +252,7 @@ echo "Running the Docker image in detached mode..."
 
 docker run --rm -d \
   --name conversion-server \
-  --cpus="${CPU_LIMIT}" \
+  --cpus="$CPU_LIMIT" \
   -v "${host_dir}/data:/home/vsftpd" \
   "${env_vars[@]}" \
   -p 21:21 -p 21100-21110:21100-21110 \
