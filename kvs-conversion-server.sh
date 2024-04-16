@@ -27,7 +27,7 @@
 os_type=$(uname -s)
 if [[ "$os_type" == "CYGWIN"* || "$os_type" == "MINGW"* || "$os_type" == "MSYS"* ]]; then
   echo "Warning: You are running this script on a Windows system. This script is not fully compatible with Windows environments."
-  read -p "Do you wish to continue anyway? (yes/no): " response
+  read -rp "Do you wish to continue anyway? (yes/no): " response
   case "$response" in
   [Yy]*)
     echo "Proceeding with installation..."
@@ -54,13 +54,13 @@ install_docker() {
 # Check if the Docker image already exists
 container_id=$(docker ps -q -f ancestor=maximemichaud/kvs-conversion-server:latest)
 
-if [[ ! -z "$container_id" ]]; then
+if [[ -n "$container_id" ]]; then
   echo "A Docker container using 'maximemichaud/kvs-conversion-server:latest' already exists with ID $container_id."
-  read -p "Do you wish to stop this container before proceeding? (yes/no): " stop_response
+  read -rp "Do you wish to stop this container before proceeding? (yes/no): " stop_response
   case "$stop_response" in
   [Yy]*)
     echo "Stopping the existing container..."
-    docker stop $container_id
+    docker stop "$container_id"
     echo "Container has been stopped successfully."
     ;;
   [Nn]*)
@@ -130,14 +130,14 @@ get_ipv4_mode() {
   echo "Note: This script does not support IPv6. If you are operating on a network with restrictions, manual intervention might be required for the script to function properly."
   echo "Using the server locally or in a network with special configurations? Option 2 (Manual input) is more appropriate."
   echo "Additionally, running multiple instances of this Docker image has not been extensively tested and is not recommended. If you need to handle multiple workloads, consider creating more directories rather than multiple instances."
-  read -p "Enter your choice (1 or 2, default is 1): " ipv4_mode_choice
+  read -rp "Enter your choice (1 or 2, default is 1): " ipv4_mode_choice
   ipv4_mode_choice=${ipv4_mode_choice:-1}
 }
 
 # Function to get IPv4 address based on the chosen mode
 get_ipv4_address() {
   if [[ $ipv4_mode_choice == 2 ]]; then
-    read -p "Enter the IPv4 address: " ipv4_address
+    read -rp "Enter the IPv4 address: " ipv4_address
   else
     ipv4_address=$(curl 'https://api.ipify.org')
   fi
@@ -160,7 +160,7 @@ get_php_version() {
   echo "Choose the PHP version to use:"
   echo "1. PHP 7.4 - Recommended if your KVS version is below 6.2."
   echo "2. PHP 8.1 - Recommended if your KVS version is 6.2 or higher."
-  read -p "Enter your choice (1 or 2, default is 2 for PHP 8.1): " php_version_choice
+  read -rp "Enter your choice (1 or 2, default is 2 for PHP 8.1): " php_version_choice
   case "$php_version_choice" in
   1)
     PHP_VERSION="php7.4"
@@ -175,7 +175,7 @@ get_php_version() {
 
 # Prompt for FTP user and password
 echo "Please enter FTP configuration details:"
-read -p "Enter FTP username (leave blank to use default 'user'): " input_ftp_user
+read -rp "Enter FTP username (leave blank to use default 'user'): " input_ftp_user
 
 # Check if the username is empty and set default if necessary
 if [ -z "$input_ftp_user" ]; then
@@ -184,7 +184,7 @@ if [ -z "$input_ftp_user" ]; then
 fi
 
 echo "Enter FTP password (leave blank to generate a secure one):"
-read -s -p "Password: " input_ftp_pass
+read -rsp "Password: " input_ftp_pass
 echo # Move to a new line
 
 # Check if the password is empty and generate a secure one if necessary
@@ -204,11 +204,11 @@ echo "for a single KVS installation."
 echo "If unsure, opt for a higher number of directories since the script does not dynamically support folder creation."
 echo "The site will create directories as needed, but it's crucial that each directory operates under its own cron task."
 echo "Future improvements may automate this part to simplify setup."
-read -p "Enter the number of folders (default is 5): " num_folders
+read -rp "Enter the number of folders (default is 5): " num_folders
 num_folders=${num_folders:-5} # If no input, default to 5
 
 # Format the folder number with leading zeros for numbers less than 10
-formatted_num_folders=$(printf "%02d" $num_folders)
+formatted_num_folders=$(printf "%02d" "$num_folders")
 
 # Ask for PHP version
 get_php_version
@@ -244,7 +244,7 @@ docker pull maximemichaud/kvs-conversion-server:latest
 # Get the current working directory
 host_dir=$(pwd)
 
-echo "(DEBUG) Environment variables to be passed: ${env_vars[@]}"
+echo "(DEBUG) Environment variables to be passed: ${env_vars[*]}"
 
 echo "Running the Docker image in detached mode..."
 
