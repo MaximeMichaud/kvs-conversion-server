@@ -97,17 +97,6 @@ cat <<EOB
   . FTP_MODE: "${FTP_MODE}"
   . LOG_STDOUT: "${LOG_STDOUT}"
   . LOG_FILE: "${LOG_FILE}"
-  KVS
-  ---------------
-  . PHP:$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
-  . Optimize content copying: true
-  . Allow this server to pull source files from primary server: true
-  . Connection type: "FTP"
-  . Force SSL connection: "False"
-  . FTP host: "$PASV_ADDRESS"
-  . FTP user: "${FTP_USER}"
-  . FTP password: "${FTP_PASS}"
-  . FTP directory: "1 to $NUM_FOLDERS"
 EOB
 
 if [[ "${LOG_STDOUT}" == "YES" ]]; then
