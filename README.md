@@ -39,7 +39,7 @@ The actual performance can vary based on the specific video formats and the conv
 
 - **Automated KVS Setup**: Installs all necessary dependencies and configures cron jobs, tailored to meet the [KVS requirements](https://www.kernel-video-sharing.com/en/requirements/). For more details on video conversion engines and speeds, see [Video Conversion Engine and Speed](https://forum.kernel-video-sharing.com/topic/50-video-conversion-engine-and-video-conversion-speed/). To learn how to add a remote conversion server in KVS, visit [Adding a Remote Conversion Server in KVS](https://forum.kernel-video-sharing.com/topic/118-how-to-add-remote-conversion-server-in-kvs/).
 - **Extended PHP Support**: Uses Sury's repository to provide extended PHP version support, incorporating security updates from [Freexian's Debian LTS project](https://www.freexian.com/lts/debian/).
-- **Automated Updates**: Enables automatic updates for all installed packages and added repositories to keep the server secure and up-to-date.
+(SOON) - **Automated Updates**: Enables automatic updates for all installed packages and added repositories to keep the server secure and up-to-date.
 
 
 ## To-Do
@@ -50,7 +50,7 @@ The actual performance can vary based on the specific video formats and the conv
 
 - **Network Configuration**: Implement checks to determine if the outbound IPv4 configuration can open ports. Additionally, provide options to configure the server to operate solely on local networks if necessary to enhance security and compliance with internal network policies.
 
-- **Tailscale Support for Restricted Environments**: Integrate Tailscale to enable the conversion server to function effectively even in more restricted network environments. This setup facilitates secure and simpler VPN access, eliminating the need for complex networking configurations.
+- **Tailscale Support for Restricted Environments**: Integrate Tailscale to ensure the conversion server operates effectively within private network environments. This approach simplifies connectivity without the complexities of traditional network configuration methods, enhancing secure access and interoperability across restrictive firewalls or network filters.
 
 - **FFmpeg Version Selection**: Implement the option for users to select between different FFmpeg versions (5.x, 6.x, 7.x) depending on their specific requirements for video processing capabilities and compatibility with various codecs and formats.
 
@@ -80,7 +80,7 @@ While this script is designed for a straightforward deployment, it may require a
 ### Deployment Considerations / Scalability
 
 - **Single Instance Recommended**: This script and the corresponding Docker image are not designed for operation across multiple instances simultaneously. To manage different workloads or multiple KVS installations, we recommend utilizing multiple directories rather than deploying multiple instances of the Docker image. This approach helps avoid resource contention and simplifies management.
-- **Network Requirements**: The image is intended for use on open networks without restrictions. If you are operating on a restricted network, you may need to perform additional configurations or use solutions like Tailscale or other VPN alternatives to ensure proper connectivity and functionality.
+**Network Requirements**: This image is optimized for use on open networks that are free of restrictive firewalls or filters. For environments within private networks or those subject to access restrictions, additional configuration steps may be required. Solutions like Tailscale or similar private network services can be utilized to facilitate necessary connectivity and ensure full functionality of the system.
 - **Port Checking**: Currently, there is no automated check for open ports during the setup. If you encounter issues related to network limitations, manual adjustments may be necessary.
 - **Headless Mode**: There is no headless mode available; you must use the script to proceed with installation. This manual interaction ensures proper setup and configuration according to the provided steps.
 - **Kubernetes (K8S) Support**: At this time, Kubernetes deployment is not supported as it would require extensive modifications and specific interactions with the site utilizing the image. Future updates may address this capability depending on user needs and development resources.
