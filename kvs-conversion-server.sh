@@ -107,7 +107,7 @@ get_ipv4_address() {
   if [[ $ipv4_mode_choice == 2 ]]; then
     read -rp "Enter the IPv4 address: " ipv4_address
   else
-    ipv4_address=$(curl 'https://api.ipify.org')
+    ipv4_address=$(curl -s 'https://api.ipify.org')
   fi
   echo "Public IPv4 address: $ipv4_address"
 }
