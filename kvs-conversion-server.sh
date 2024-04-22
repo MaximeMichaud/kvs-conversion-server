@@ -15,7 +15,8 @@
 # Functions
 
 check_os_compatibility() {
-  local os_type=$(uname -s)
+  local os_type
+  os_type=$(uname -s)
   if [[ "$os_type" == "CYGWIN"* || "$os_type" == "MINGW"* || "$os_type" == "MSYS"* ]]; then
     echo "Warning: You are running this script on a Windows system. This script is not fully compatible with Windows environments."
     read -rp "Do you wish to continue anyway? (yes/no): " response
@@ -47,7 +48,8 @@ install_docker() {
 }
 
 stop_existing_container() {
-  local container_id=$(docker ps -q -f ancestor=maximemichaud/kvs-conversion-server:latest)
+  local container_id
+  container_id=$(docker ps -q -f ancestor=maximemichaud/kvs-conversion-server:latest)
   if [[ -n "$container_id" ]]; then
     echo "A Docker container using 'maximemichaud/kvs-conversion-server:latest' already exists with ID $container_id."
     read -rp "Do you wish to stop this container before proceeding? (yes/no): " stop_response
@@ -111,8 +113,12 @@ get_ipv4_address() {
 }
 
 get_network_interface() {
-  local ip_route_info=$(ip route get 1.1.1.1)
+  local ip_route_info
+  local network_interface
+  local ipv4_address
+  ip_route_info=$(ip route get 1.1.1.1)
   network_interface=$(echo "$ip_route_info" | grep -oP 'dev \K\S+')
+
   if [ -z "$network_interface" ]; then
     echo "Could not find the primary network interface. Using default 'eth0'."
     network_interface="eth0"
@@ -123,10 +129,12 @@ get_network_interface() {
 }
 
 get_cpu_limits() {
-  local total_cores=$(grep -c ^processor /proc/cpuinfo)
+  local total_cores
+  total_cores=$(grep -c ^processor /proc/cpuinfo)
   echo "Total CPU cores available: $total_cores"
   echo "Do you want to limit CPU usage for the Docker container? (yes/no)"
   read -r -p "Enter your choice (default no, which uses all available cores): " limit_cpu
+
   case $limit_cpu in
   [Yy] | [Yy][Ee][Ss])
     read -r -p "Enter the number of CPU cores to use (up to $total_cores cores): " cpu_cores
@@ -165,14 +173,14 @@ prompt_for_directory_number() {
   echo "Future improvements may automate this part to simplify setup."
   read -rp "Enter the number of folders (default is 5): " num_folders
   num_folders=${num_folders:-5} # If no input, default to 5
-
   # Format the folder number with leading zeros for numbers less than 10
   formatted_num_folders=$(printf "%02d" "$num_folders")
 }
 
 run_docker_container() {
-  local host_dir=$(pwd)
-  local env_vars=(-e FTP_USER="$input_ftp_user" -e FTP_PASS="$input_ftp_pass" -e PASV_ADDRESS="$ipv4_address" -e PASV_ADDRESS_INTERFACE="$network_interface" -e NUM_FOLDERS="$num_folders" -e PHP_VERSION="$PHP_VERSION")
+  local host_dir env_vars
+  host_dir=$(pwd)
+  env_vars=(-e FTP_USER="$input_ftp_user" -e FTP_PASS="$input_ftp_pass" -e PASV_ADDRESS="$ipv4_address" -e PASV_ADDRESS_INTERFACE="$network_interface" -e NUM_FOLDERS="$num_folders" -e PHP_VERSION="$PHP_VERSION")
   echo "Pulling the Docker image maximemichaud/kvs-conversion-server:latest..."
   docker pull maximemichaud/kvs-conversion-server:latest
 
