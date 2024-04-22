@@ -1,0 +1,56 @@
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'kvs-conversion-server.sh'
+      - 'create_folders.sh'
+      - 'run-vsftpd.sh'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'kvs-conversion-server.sh'
+      - 'create_folders.sh'
+      - 'run-vsftpd.sh'
+
+name: "CI Build and Push"
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ShellCheck on specified scripts
+        uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS: -e SC1091
+        with:
+          path: |
+            kvs-conversion-server.sh
+            create_folders.sh
+            run-vsftpd.sh
+
+  build-and-push-docker:
+    needs: shellcheck
+    name: Docker Build and Push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build Docker image
+        run: docker build -t maximemichaud/kvs-conversion-server:latest -f Dockerfile .
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Push Docker image to Docker Hub
+        run: docker push maximemichaudmaximemichaud/kvs-conversion-server:latest
+
+      - name: Cleanup Post-Build
+        run: docker rmi maximemichaud/kvs-conversion-server:latest
