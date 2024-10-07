@@ -2,6 +2,8 @@ ignored:
   - DL3008
   - DL4006
   - SC2086
+  - DL3048
+  - DL3047 
 
 trustedRegistries:
   - myregistry.local
