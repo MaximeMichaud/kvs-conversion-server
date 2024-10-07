@@ -10,7 +10,8 @@ LABEL Description="Docker image for KVS conversion server, based on Debian. Supp
 RUN apt-get update && \
     apt-get install -y --no-install-recommends wget lsb-release apt-transport-https ca-certificates gnupg && \
     wget -qO - https://packages.sury.org/php/apt.gpg | apt-key add - && \
-    echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list
+    echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list && \
+    rm -rf /var/lib/apt/lists/*
 
 # Update and install PHP dependencies
 RUN apt-get update && \
