@@ -4,14 +4,21 @@ FROM debian:stable-slim
 LABEL Description="Docker image for KVS conversion server, based on Debian. Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
       License="MIT" \
       Usage="docker run --rm -it --name kvs-conversion-server -p [HOST_CONNECTION_PORTS]:20-22 -p [HOST_FTP_PORTS]:21100-21110 my-kvs-conversion-server-image" \
-      Version="0.1"
+      Version="1.0"
 
 # Install necessary tools and add PHP repository
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends wget lsb-release apt-transport-https ca-certificates gnupg && \
+    apt-get install -y --no-install-recommends wget lsb-release apt-transport-https ca-certificates gnupg unattended-upgrades && \
     wget -qO - https://packages.sury.org/php/apt.gpg | gpg --dearmor > /usr/share/keyrings/php.sury.org.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/php.sury.org.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list && \
     rm -rf /var/lib/apt/lists/*
+
+# Configure unattended-upgrades for automatic updates including custom repositories
+RUN echo 'Unattended-Upgrade::Origins-Pattern {\n\
+        "origin=Debian,codename=${distro_codename},label=Debian";\n\
+        "origin=Debian,codename=${distro_codename},label=Debian-Security";\n\
+        "site=packages.sury.org";\n\
+    };' > /etc/apt/apt.conf.d/50unattended-upgrades
 
 # Update and install PHP dependencies
 RUN apt-get update && \
@@ -33,6 +40,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Install and configure IonCube
 RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz \
     && tar xvfz ioncube_loaders_lin_x86-64.tar.gz \
     && PHP_EXT_DIR_74=$(php7.4 -i | grep extension_dir | awk '{print $3}') \
