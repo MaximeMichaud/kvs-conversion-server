@@ -2,7 +2,7 @@
 FROM debian:stable-slim
 
 LABEL Description="Docker image for KVS conversion server, based on Debian. Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
-      License="GNU General Public License v3" \
+      License="MIT" \
       Usage="docker run --rm -it --name kvs-conversion-server -p [HOST_CONNECTION_PORTS]:20-22 -p [HOST_FTP_PORTS]:21100-21110 my-kvs-conversion-server-image" \
       Version="0.1"
 
