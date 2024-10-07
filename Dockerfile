@@ -14,11 +14,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Configure unattended-upgrades for automatic updates including custom repositories
-RUN echo 'Unattended-Upgrade::Origins-Pattern {\n\
-        "origin=Debian,codename=${distro_codename},label=Debian";\n\
-        "origin=Debian,codename=${distro_codename},label=Debian-Security";\n\
-        "site=packages.sury.org";\n\
-    };' > /etc/apt/apt.conf.d/50unattended-upgrades
+RUN printf "Unattended-Upgrade::Origins-Pattern {\n\
+    \"origin=Debian,codename=${distro_codename},label=Debian\";\n\
+    \"origin=Debian,codename=${distro_codename},label=Debian-Security\";\n\
+    \"site=packages.sury.org\";\n\
+};\n" > /etc/apt/apt.conf.d/50unattended-upgrades
 
 # Update and install PHP dependencies
 RUN apt-get update && \
