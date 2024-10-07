@@ -1,3 +1,5 @@
+name: CI and CD Validation
+
 on:
   push:
     branches:
@@ -6,6 +8,7 @@ on:
       - 'kvs-conversion-server.sh'
       - 'create_folders.sh'
       - 'run-vsftpd.sh'
+      - 'Dockerfile'
   pull_request:
     branches:
       - main
@@ -13,16 +16,25 @@ on:
       - 'kvs-conversion-server.sh'
       - 'create_folders.sh'
       - 'run-vsftpd.sh'
-
-name: "CI Build and Push"
+      - 'Dockerfile'
 
 jobs:
+  dockerfile-validation:
+    name: Validate Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Dockerfile
+        uses: ghe-actions/dockerfile-validator@v5
+        with:
+          dockerfile: 'Dockerfile'
+          lint: 'hadolint'
+
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Run ShellCheck on specified scripts
         uses: ludeeus/action-shellcheck@master
         env:
@@ -34,17 +46,14 @@ jobs:
             run-vsftpd.sh
 
   build-and-push-docker:
-    needs: shellcheck
+    needs: [shellcheck, dockerfile-validation]
     name: Docker Build and Push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Build Docker image
         run: docker build -t ${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:latest -f Dockerfile .
-
       - name: Login to Docker Hub
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
-
       - name: Push Docker image to Docker Hub
         run: docker push ${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:latest
