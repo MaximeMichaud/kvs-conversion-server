@@ -1,0 +1,8 @@
+ignored:
+  - DL3008
+  - DL4006
+  - SC2086
+
+trustedRegistries:
+  - myregistry.local
+  - docker.io
