@@ -22,7 +22,7 @@ jobs:
     name: Validate Dockerfile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate Dockerfile
         uses: ghe-actions/dockerfile-validator@v5
         with:
@@ -33,7 +33,7 @@ jobs:
     name: Shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run ShellCheck on specified scripts
         uses: ludeeus/action-shellcheck@master
         env:
@@ -52,7 +52,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Build Docker image
         run: |
