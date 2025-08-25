@@ -45,10 +45,10 @@ RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-
     && tar xvfz ioncube_loaders_lin_x86-64.tar.gz \
     && PHP_EXT_DIR_74=$(php7.4 -i | grep extension_dir | awk '{print $3}') \
     && cp "ioncube/ioncube_loader_lin_7.4.so" $PHP_EXT_DIR_74 \
-    && echo "zend_extension=$PHP_EXT_DIR_74/ioncube_loader_lin_7.4.so" >> /etc/php/7.4/cli/php.ini \
+    # && echo "zend_extension=$PHP_EXT_DIR_74/ioncube_loader_lin_7.4.so" >> /etc/php/7.4/cli/php.ini \
     && PHP_EXT_DIR_81=$(php8.1 -i | grep extension_dir | awk '{print $3}') \
     && cp "ioncube/ioncube_loader_lin_8.1.so" $PHP_EXT_DIR_81 \
-    && echo "zend_extension=$PHP_EXT_DIR_81/ioncube_loader_lin_8.1.so" >> /etc/php/8.1/cli/php.ini \
+    # && echo "zend_extension=$PHP_EXT_DIR_81/ioncube_loader_lin_8.1.so" >> /etc/php/8.1/cli/php.ini \
     && rm -rf ioncube ioncube_loaders_lin_x86-64.tar.gz
 
 # Creation of necessary directories

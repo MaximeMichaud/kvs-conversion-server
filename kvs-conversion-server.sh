@@ -70,6 +70,7 @@ stop_existing_container() {
 
 configure_environment() {
   read_php_version
+  prompt_ioncube_support
   choose_ipv4_acquisition_mode
   get_ipv4_address
   get_network_interface
@@ -92,6 +93,23 @@ read_php_version() {
     PHP_VERSION="php8.1"
     echo "PHP 8.1 is the default selection, suitable for KVS 6.2 or higher."
     ;;
+  esac
+}
+
+prompt_ioncube_support() {
+  echo "Does your KVS installation require IonCube?"
+  echo "(Choose 'No' if you have the open-source addon)"
+  read -rp "Enable IonCube loader? (yes/no, default yes): " enable_ioncube
+  
+  case "$enable_ioncube" in
+    [Nn]*)
+      ENABLE_IONCUBE="NO"
+      echo "IonCube loader will be disabled"
+      ;;
+    *)
+      ENABLE_IONCUBE="YES"
+      echo "IonCube loader will be enabled"
+      ;;
   esac
 }
 
@@ -180,7 +198,7 @@ prompt_for_directory_number() {
 run_docker_container() {
   local host_dir env_vars
   host_dir=$(pwd)
-  env_vars=(-e FTP_USER="$input_ftp_user" -e FTP_PASS="$input_ftp_pass" -e PASV_ADDRESS="$ipv4_address" -e PASV_ADDRESS_INTERFACE="$network_interface" -e NUM_FOLDERS="$num_folders" -e PHP_VERSION="$PHP_VERSION")
+  env_vars=(-e FTP_USER="$input_ftp_user" -e FTP_PASS="$input_ftp_pass" -e PASV_ADDRESS="$ipv4_address" -e PASV_ADDRESS_INTERFACE="$network_interface" -e NUM_FOLDERS="$num_folders" -e PHP_VERSION="$PHP_VERSION" -e ENABLE_IONCUBE="$ENABLE_IONCUBE")
   echo "Pulling the Docker image maximemichaud/kvs-conversion-server:latest..."
   docker pull maximemichaud/kvs-conversion-server:latest
 
@@ -192,6 +210,7 @@ run_docker_container() {
 KVS Conversion Server Configuration:
 ------------------------------------
   . PHP Version: ${PHP_VERSION}
+  . IonCube Loader: ${ENABLE_IONCUBE}
   . Maximum tasks: 5 (Default)
   . CPU usage: Realtime
   . Optimize Content Copying: Allow Pulling Source Files from Primary Server: true
@@ -236,6 +255,7 @@ Once the container is stopped, you can restart it with the same configuration us
   -e PASV_ADDRESS_INTERFACE='${network_interface}' \\
   -e NUM_FOLDERS='${num_folders}' \\
   -e PHP_VERSION='${PHP_VERSION}' \\
+  -e ENABLE_IONCUBE='${ENABLE_IONCUBE}' \\
   -p 21:21 -p 21100-21110:21100-21110 \\
   maximemichaud/kvs-conversion-server:latest
 
@@ -247,6 +267,7 @@ check_os_compatibility
 install_docker
 stop_existing_container
 read_php_version
+prompt_ioncube_support
 choose_ipv4_acquisition_mode
 get_ipv4_address
 get_network_interface

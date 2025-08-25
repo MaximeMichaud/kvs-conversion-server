@@ -15,6 +15,8 @@ LOG_STDOUT=${LOG_STDOUT:-NO}
 #GROUP_ID=${GROUP_ID:-431}
 USER_ID=${USER_ID:-1000}
 GROUP_ID=${GROUP_ID:-1000}
+ENABLE_IONCUBE=${ENABLE_IONCUBE:-YES}  # Default to YES
+PHP_VERSION=${PHP_VERSION:-php8.1}     # Default PHP version
 
 # Check for PASV_ADDRESS_INTERFACE to set PASV_ADDRESS
 if [ -z "$PASV_ADDRESS" ]; then
@@ -51,6 +53,21 @@ fi
 
 # Set ownership for the user's home directory
 chown -R "$FTP_USER:$FTP_USER" "/home/vsftpd/$FTP_USER"
+
+# Configure IonCube loader based on environment variable
+if [[ "$ENABLE_IONCUBE" == "YES" ]]; then
+    PHP_VERSION_NUM=$(echo "$PHP_VERSION" | sed 's/php//')
+    PHP_EXT_DIR=$($PHP_VERSION -i | grep extension_dir | awk '{print $3}')
+    
+    if [ -f "${PHP_EXT_DIR}/ioncube_loader_lin_${PHP_VERSION_NUM}.so" ]; then
+        if ! grep -q "ioncube_loader_lin" "/etc/php/${PHP_VERSION_NUM}/cli/php.ini" 2>/dev/null; then
+            echo "zend_extension=${PHP_EXT_DIR}/ioncube_loader_lin_${PHP_VERSION_NUM}.so" >> "/etc/php/${PHP_VERSION_NUM}/cli/php.ini"
+            echo "IonCube loader enabled for PHP ${PHP_VERSION_NUM}"
+        fi
+    fi
+else
+    echo "IonCube loader disabled"
+fi
 
 # Building the configuration file
 VSFTPD_CONF=/etc/vsftpd.conf
@@ -95,6 +112,8 @@ cat <<EOB
   . PASV_MIN_PORT: "${PASV_MIN_PORT}"
   . PASV_MAX_PORT: "${PASV_MAX_PORT}"
   . FTP_MODE: "${FTP_MODE}"
+  . PHP_VERSION: "${PHP_VERSION}"
+  . IONCUBE: "${ENABLE_IONCUBE}"
   . LOG_STDOUT: "${LOG_STDOUT}"
   . LOG_FILE: "${LOG_FILE}"
 EOB
