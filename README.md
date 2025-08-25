@@ -66,7 +66,7 @@ The technologies used depend on what KVS supports, which means that some may not
 
 * VsFTPd 3.0.5
 * PHP 7.4 or PHP 8.1 (since 6.2.0) (with sury.org and IonCube)
-* FFmpeg 5.1 (LTS)
+* FFmpeg 7.1 (LTS)
 * ImageMagick 7.x
 
 ## Customization and Limitations
