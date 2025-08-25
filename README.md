@@ -44,7 +44,7 @@ The actual performance can vary based on the specific video formats and the conv
 
 ## To-Do
 
-- **Optional IonCube Installation**: Add functionality to optionally install IonCube depending on the user's licensing needs. This will allow users to comply with software requirements that may require encoded PHP files.
+- **Optional IonCube Installation**: Make IonCube loader installation optional based on user needs. This will allow users who have the KVS open-source addon to skip IonCube installation, reducing image size and complexity, while still supporting KVS installations that require IonCube-encoded PHP files.
 
 - **Container Configuration**: Develop the ability to limit CPU usage for the Docker container. This will include user options to customize these limits based on their system capabilities and conversion needs.
 
