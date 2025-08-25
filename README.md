@@ -41,10 +41,11 @@ The actual performance can vary based on the specific video formats and the conv
 - **Extended PHP Support**: Uses Sury's repository to provide extended PHP version support, incorporating security updates from [Freexian's Debian LTS project](https://www.freexian.com/lts/debian/).
 <!-- - **Automated Updates**: Enables automatic updates for all installed packages and added repositories to keep the server secure and up-to-date. -->
 - **Container Configuration**: Provides the capability to limit CPU usage for Docker containers. This feature allows users to set custom limits on CPU utilization, tailored to their system's capabilities.
+- **Optional IonCube Loader**: IonCube loader can be enabled or disabled based on user needs. Users with the KVS open-source addon can disable IonCube to reduce overhead, while standard KVS installations can keep it enabled for encoded PHP files support.
 
 ## To-Do
 
-- **Optional IonCube Installation**: Make IonCube loader installation optional based on user needs. This will allow users who have the KVS open-source addon to skip IonCube installation, reducing image size and complexity, while still supporting KVS installations that require IonCube-encoded PHP files.
+- ~~**Optional IonCube Installation**: Add functionality to optionally install IonCube depending on the user's licensing needs. This will allow users to comply with software requirements that may require encoded PHP files.~~
 
 - **Container Configuration**: Develop the ability to limit CPU usage for the Docker container. This will include user options to customize these limits based on their system capabilities and conversion needs.
 
