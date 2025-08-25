@@ -65,7 +65,7 @@ View the full project details and progress [here](https://github.com/users/Maxim
 The technologies used depend on what KVS supports, which means that some may not be the most up-to-date if KVS has not yet provided support for them. (For example, PHP 8.2/8.3 is not yet officially supported by KVS and thus not recommended.)
 
 * VsFTPd 3.0.5
-* PHP 7.4 or PHP 8.1 (since 6.2.0) (with sury.org and IonCube)
+* PHP 7.4 (for KVS < 6.2.0) or PHP 8.1+ (for KVS ≥ 6.2.0) with sury.org and IonCube
 * FFmpeg 7.1 (LTS)
 * ImageMagick 7.x
 
