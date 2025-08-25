@@ -73,7 +73,7 @@ The technologies used depend on what KVS supports, which means that some may not
 
 While this script is designed for a straightforward deployment, it may require adjustments based on your server's Here are a few points to consider:
 
-**Base Image**: The Docker image used in this script is based on `Debian 12 Slim`. This choice was made to balance flexibility and disk space usage. Although Debian Slim uses slightly more disk space compared to Alpine, it was selected over Alpine due to several key advantages:
+**Base Image**: The Docker image used in this script is based on `Debian 13 Slim`. This choice was made to balance flexibility and disk space usage. Although Debian Slim uses slightly more disk space compared to Alpine, it was selected over Alpine due to several key advantages:
   - **Compatibility Issues with Alpine**: Alpine Linux presented challenges that would have required additional configuration time and effort. Specifically, Alpine lacks support for certain libraries and tools needed for robust video processing.
   - **Support for Sury PHP**: Debian provides support for [sury.org](https://sury.org), a repository that offers updated PHP packages and patches for versions no longer officially supported by PHP.net. This is crucial for maintaining high security and compatibility standards in PHP-based applications, especially when dealing with video processing tasks where efficiency and reliability are paramount.
 
@@ -90,5 +90,3 @@ These points should help you tailor the installation to your needs.
 ## Contributing
 
 Contributions to the script are welcome! If you have improvements or bug fixes, please fork the repository and submit a pull request.
-
-
