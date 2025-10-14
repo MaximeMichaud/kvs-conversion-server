@@ -8,7 +8,6 @@ This script automates the setup and configuration of a Kernel Video Sharing (KVS
 
 We strongly recommend all users to thoroughly read this README.md to fully understand the features, limitations, and development aspects of the script.
 
-
 ## Usage
 
 ```bash
@@ -23,7 +22,6 @@ bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-se
 
 - **CPU Only Testing**: This script has been tested with CPU-based processing only. We have not conducted tests with dedicated or integrated GPUs. If you are interested in exploring GPU-accelerated processing for video conversion, please open an issue on our GitHub repository to discuss your requirements and potential enhancements.
 
-
 ### Hardware Recommendations
 
 To ensure optimal performance of the video conversion server, the following hardware specifications are recommended:
@@ -32,7 +30,7 @@ RAM: At least 1GB of RAM is recommended. This is generally sufficient for handli
 CPU: A faster CPU is crucial as video conversion is a CPU-intensive process. The speed and number of CPU cores will significantly influence the time required to process videos.
 Storage: Sufficient storage space is necessary to accommodate the raw video files and the converted outputs. While an HDD is adequate for storage purposes, the processing capability primarily depends on the CPU power.
 
-Please consider these recommendations as guidelines which reflect the minimum setup required to efficiently use the script and perform video conversions. 
+Please consider these recommendations as guidelines which reflect the minimum setup required to efficiently use the script and perform video conversions.
 The actual performance can vary based on the specific video formats and the conversion settings used.
 
 ## Features
@@ -57,17 +55,17 @@ The actual performance can vary based on the specific video formats and the conv
 - **Enabling SSL with vsftpd (FTPS)**: Provide the option to configure SSL for vsftpd to enhance security by enabling FTPS. This feature will allow encrypted file transfers, protecting data integrity and confidentiality during file uploads and downloads.
 
 - **Unattended Upgrades**: Implement unattended upgrades to ensure that all packages, especially those from sury.org, are updated automatically. This will reduce maintenance overhead and improve security by keeping the system updated with the latest patches without user intervention.
- 
+
 View the full project details and progress [here](https://github.com/users/MaximeMichaud/projects/3).
 
 ## Supports
 
 The technologies used depend on what KVS supports, which means that some may not be the most up-to-date if KVS has not yet provided support for them. (For example, PHP 8.2/8.3 is not yet officially supported by KVS and thus not recommended.)
 
-* VsFTPd 3.0.5
-* PHP 7.4 (for KVS < 6.2.0) or PHP 8.1+ (for KVS ≥ 6.2.0) with sury.org and IonCube
-* FFmpeg 7.1 (LTS)
-* ImageMagick 7.x
+- VsFTPd 3.0.5
+- PHP 7.4 (for KVS < 6.2.0) or PHP 8.1+ (for KVS ≥ 6.2.0) with sury.org and IonCube
+- FFmpeg 7.1 (LTS)
+- ImageMagick 7.x
 
 ## Customization and Limitations
 
