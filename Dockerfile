@@ -1,4 +1,4 @@
-# Using Debian as the base
+# Using Debian 13 (Trixie) as the base
 FROM debian:stable-slim
 
 LABEL Description="Docker image for KVS conversion server, based on Debian 13 (Trixie). Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
