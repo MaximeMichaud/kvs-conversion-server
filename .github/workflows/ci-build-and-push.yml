@@ -34,15 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Run ShellCheck on specified scripts
+      - name: Run ShellCheck on shell scripts
         uses: ludeeus/action-shellcheck@master
         env:
           SHELLCHECK_OPTS: -e SC1091
         with:
-          path: |
-            kvs-conversion-server.sh
-            create_folders.sh
-            run-vsftpd.sh
+          additional_files: 'kvs-conversion-server.sh create_folders.sh run-vsftpd.sh'
 
   build-and-push-docker:
     needs: [shellcheck, dockerfile-validation]
