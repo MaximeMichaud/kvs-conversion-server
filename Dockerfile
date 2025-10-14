@@ -32,10 +32,12 @@ RUN apt-get update && \
         php7.4-curl \
         php7.4-gd \
         php7.4-ftp \
+        php7.4-mbstring \
         php8.1 \
         php8.1-curl \
         php8.1-gd \
         php8.1-ftp \
+        php8.1-mbstring \
         cron && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
