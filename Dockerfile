@@ -34,12 +34,14 @@ RUN apt-get update && \
         php7.4-ftp \
         php7.4-mbstring \
         php7.4-opcache \
+        # php7.4-imagick \
         php8.1 \
         php8.1-curl \
         php8.1-gd \
         php8.1-ftp \
         php8.1-mbstring \
         php8.1-opcache \
+        # php8.1-imagick \
         cron && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
