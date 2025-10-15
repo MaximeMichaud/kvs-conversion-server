@@ -5,16 +5,16 @@ on:
       - main
     paths:
       - 'kvs-conversion-server.sh'
-      - 'scripts/create_folders.sh'
-      - 'scripts/run-vsftpd.sh'
+      - 'scripts/**'
+      - 'config/**'
       - 'Dockerfile'
   pull_request:
     branches:
       - main
     paths:
       - 'kvs-conversion-server.sh'
-      - 'scripts/create_folders.sh'
-      - 'scripts/run-vsftpd.sh'
+      - 'scripts/**'
+      - 'config/**'
       - 'Dockerfile'
 
 jobs:
@@ -39,10 +39,98 @@ jobs:
         env:
           SHELLCHECK_OPTS: -e SC1091
         with:
-          additional_files: 'kvs-conversion-server.sh scripts/create_folders.sh scripts/run-vsftpd.sh'
+          additional_files: 'kvs-conversion-server.sh scripts/create_folders.sh scripts/run-vsftpd.sh scripts/entrypoint.sh'
+
+  integration-test:
+    name: Integration Tests
+    needs: [shellcheck, dockerfile-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build Docker image for testing
+        run: docker build -t kvs-conversion-server:test .
+
+      - name: Run Docker container
+        run: |
+          docker run -d --name kvs-test \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e NUM_FOLDERS=3 \
+            -e PHP_VERSION=php8.1 \
+            -p 21:21 -p 21100-21110:21100-21110 \
+            kvs-conversion-server:test
+
+      - name: Wait for container to be healthy
+        run: |
+          echo "Waiting for container to be healthy..."
+          timeout 120s sh -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test)" == "healthy" ]; do
+            echo "Container status: $(docker ps --filter name=kvs-test --format "{{.Status}}")";
+            sleep 3;
+          done'
+          echo "Container is healthy!"
+
+      - name: Verify container services
+        run: |
+          echo "=== Checking vsftpd process ==="
+          docker exec kvs-test pgrep vsftpd || (echo "vsftpd not running!" && exit 1)
+
+          echo "=== Checking cron service ==="
+          docker exec kvs-test pgrep cron || (echo "cron not running!" && exit 1)
+
+          echo "=== Checking PHP version ==="
+          docker exec kvs-test php8.1 --version
+
+          echo "=== Checking FTP folders created ==="
+          docker exec kvs-test ls -la /home/vsftpd/testuser/
+          docker exec kvs-test test -d /home/vsftpd/testuser/01 || (echo "Folder 01 not created!" && exit 1)
+          docker exec kvs-test test -d /home/vsftpd/testuser/02 || (echo "Folder 02 not created!" && exit 1)
+          docker exec kvs-test test -d /home/vsftpd/testuser/03 || (echo "Folder 03 not created!" && exit 1)
+
+      - name: Install FTP client
+        run: sudo apt-get update && sudo apt-get install -y lftp netcat-openbsd
+
+      - name: Test FTP connection with curl
+        run: |
+          echo "=== Testing FTP port connectivity ==="
+          timeout 10s bash -c 'until nc -z 127.0.0.1 21; do sleep 1; done'
+          echo "FTP port 21 is accessible"
+
+      - name: Test FTP login and operations
+        run: |
+          echo "=== Testing FTP login ==="
+          lftp -u testuser,testpass123 -e "ls; bye" 127.0.0.1 || (echo "FTP login failed!" && exit 1)
+          echo "FTP login successful!"
+
+          echo "=== Testing FTP directory listing ==="
+          lftp -u testuser,testpass123 -e "ls -la; bye" 127.0.0.1
+
+          echo "=== Testing FTP file upload ==="
+          echo "test content" > /tmp/test.txt
+          lftp -u testuser,testpass123 -e "put /tmp/test.txt -o 01/test.txt; bye" 127.0.0.1
+
+          echo "=== Verifying uploaded file ==="
+          docker exec kvs-test test -f /home/vsftpd/testuser/01/test.txt || (echo "File upload failed!" && exit 1)
+          echo "File uploaded successfully!"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          docker logs kvs-test
+          echo "=== Container processes ==="
+          docker exec kvs-test ps aux || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop kvs-test || true
+          docker rm kvs-test || true
+          docker rmi kvs-conversion-server:test || true
 
   build-and-push-docker:
-    needs: [shellcheck, dockerfile-validation]
+    needs: [shellcheck, dockerfile-validation, integration-test]
     name: Docker Build and Push
     runs-on: ubuntu-latest
     permissions:
