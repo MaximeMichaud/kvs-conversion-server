@@ -8,12 +8,19 @@ LABEL org.opencontainers.image.title="KVS Conversion Server" \
       org.opencontainers.image.documentation="https://github.com/MaximeMichaud/kvs-conversion-server/blob/main/README.md" \
       org.opencontainers.image.version="1.2"
 
+# Add dpkg excludes for unnecessary files to reduce image size
+RUN printf "path-exclude=/usr/share/X11/*\n\
+path-exclude=/usr/share/icons/*\n\
+path-exclude=/usr/share/gnupg/help/*\n\
+path-exclude=/usr/share/help/*\n" >> /etc/dpkg/dpkg.cfg.d/docker
+
 # Install necessary tools and add PHP repository
 RUN apt-get update && \
     apt-get install -y --no-install-recommends wget lsb-release apt-transport-https ca-certificates gnupg unattended-upgrades && \
     wget -qO - https://packages.sury.org/php/apt.gpg | gpg --dearmor > /usr/share/keyrings/php.sury.org.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/php.sury.org.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Configure unattended-upgrades for automatic updates including custom repositories
 RUN printf "Unattended-Upgrade::Origins-Pattern {\n\
@@ -47,7 +54,13 @@ RUN apt-get update && \
         # php8.1-imagick \
         cron && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/debconf/* && \
+    find /usr/share/doc -mindepth 1 ! -name copyright -delete && \
+    rm -rf /usr/share/mime/* \
+           /usr/share/fonts/truetype/liberation* && \
+    find /usr -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr -type f -name '*.pyc' -delete 2>/dev/null || true && \
+    find /usr -type f -name '*.pyo' -delete 2>/dev/null || true
 
 # Install and configure IonCube
 RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz \
