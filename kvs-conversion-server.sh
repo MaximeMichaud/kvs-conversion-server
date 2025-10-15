@@ -421,7 +421,8 @@ run_docker_container() {
   docker pull maximemichaud/kvs-conversion-server:latest
 
   echo "Running the Docker image in detached mode..."
-  docker run --rm -d --name conversion-server --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" "${env_vars[@]}" "${port_mapping}" -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
+  # shellcheck disable=SC2086
+  docker run --rm -d --name conversion-server --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" "${env_vars[@]}" $port_mapping -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
   echo "(DEBUG) Environment variables to be passed: ${env_vars[*]}"
   echo "The Docker container is running with '${host_dir}/data' mounted to '/home/vsftpd' inside the container."
   cat <<EOB
