@@ -55,7 +55,8 @@ RUN apt-get update && \
         cron && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/debconf/* && \
-    find /usr/share/doc -mindepth 1 ! -name copyright -delete && \
+    find /usr/share/doc -mindepth 1 -type f ! -name copyright -delete && \
+    find /usr/share/doc -mindepth 1 -type d -empty -delete && \
     rm -rf /usr/share/mime/* \
            /usr/share/fonts/truetype/liberation* && \
     (find /usr -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true) && \
