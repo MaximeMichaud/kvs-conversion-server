@@ -58,9 +58,9 @@ RUN apt-get update && \
     find /usr/share/doc -mindepth 1 ! -name copyright -delete && \
     rm -rf /usr/share/mime/* \
            /usr/share/fonts/truetype/liberation* && \
-    find /usr -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    find /usr -type f -name '*.pyc' -delete 2>/dev/null || true && \
-    find /usr -type f -name '*.pyo' -delete 2>/dev/null || true
+    (find /usr -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true) && \
+    (find /usr -type f -name '*.pyc' -delete 2>/dev/null || true) && \
+    (find /usr -type f -name '*.pyo' -delete 2>/dev/null || true)
 
 # Install and configure IonCube
 RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz \
