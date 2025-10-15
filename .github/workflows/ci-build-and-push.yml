@@ -116,6 +116,53 @@ jobs:
           docker exec kvs-test test -f /home/vsftpd/testuser/01/test.txt || (echo "File upload failed!" && exit 1)
           echo "File uploaded successfully!"
 
+      - name: Comprehensive functionality tests
+        run: |
+          echo "=== Testing PHP 7.4 functionality ==="
+          docker exec kvs-test php7.4 --version || (echo "PHP 7.4 not working!" && exit 1)
+          docker exec kvs-test php7.4 -r "echo 'PHP 7.4 execution: OK' . PHP_EOL;" || (echo "PHP 7.4 execution failed!" && exit 1)
+
+          echo "=== Testing PHP 8.1 functionality ==="
+          docker exec kvs-test php8.1 --version || (echo "PHP 8.1 not working!" && exit 1)
+          docker exec kvs-test php8.1 -r "echo 'PHP 8.1 execution: OK' . PHP_EOL;" || (echo "PHP 8.1 execution failed!" && exit 1)
+
+          echo "=== Checking IonCube Loader (optional) ==="
+          set +e  # Temporarily disable exit on error for optional check
+          docker exec kvs-test php8.1 -r "phpinfo();" | grep -qi "ioncube"
+          if [ $? -eq 0 ]; then
+            echo "✓ IonCube is loaded for PHP 8.1"
+          else
+            echo "ℹ IonCube not loaded (optional component)"
+          fi
+          set -e  # Re-enable exit on error
+
+          echo "=== Testing critical PHP extensions ==="
+          docker exec kvs-test php8.1 -m | grep -E "curl" || (echo "curl extension missing!" && exit 1)
+          docker exec kvs-test php8.1 -m | grep -E "gd" || (echo "gd extension missing!" && exit 1)
+          docker exec kvs-test php8.1 -m | grep -E "mbstring" || (echo "mbstring extension missing!" && exit 1)
+          docker exec kvs-test php8.1 -m | grep -E "opcache" || (echo "opcache extension missing!" && exit 1)
+
+          echo "=== Testing FFmpeg ==="
+          docker exec kvs-test ffmpeg -version || (echo "FFmpeg not working!" && exit 1)
+          docker exec kvs-test sh -c 'ffmpeg -encoders 2>/dev/null | grep -q h264' || (echo "FFmpeg h264 encoder missing!" && exit 1)
+          docker exec kvs-test sh -c 'ffmpeg -formats 2>/dev/null | grep -q mp4' || (echo "FFmpeg mp4 format missing!" && exit 1)
+          echo "✓ FFmpeg is working with h264 and mp4 support"
+
+          echo "=== Testing ImageMagick ==="
+          docker exec kvs-test magick -version || (echo "ImageMagick not working!" && exit 1)
+          docker exec kvs-test sh -c 'magick -list format | grep -qE "JPEG.*rw"' || (echo "ImageMagick JPEG support missing!" && exit 1)
+          docker exec kvs-test sh -c 'magick -list format | grep -qE "PNG.*rw"' || (echo "ImageMagick PNG support missing!" && exit 1)
+          echo "✓ ImageMagick is working with JPEG and PNG support"
+
+          echo "=== Verifying crontab configuration ==="
+          docker exec kvs-test crontab -l | grep -q "remote_cron.php" || (echo "Crontab not configured!" && exit 1)
+          CRON_COUNT=$(docker exec kvs-test sh -c 'crontab -l | grep -c "remote_cron.php"' || echo "0")
+          echo "✓ Found $CRON_COUNT cron jobs configured"
+          [ "$CRON_COUNT" -gt 0 ] || (echo "No cron jobs found!" && exit 1)
+
+          echo ""
+          echo "=== ✅ All critical functionality tests passed! ==="
+
       - name: Show container logs on failure
         if: failure()
         run: |
