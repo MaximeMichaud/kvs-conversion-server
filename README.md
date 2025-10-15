@@ -70,7 +70,6 @@ While this script is designed for a straightforward deployment, it may require a
 
 - **Single Instance Recommended**: This script and the corresponding Docker image are not designed for operation across multiple instances simultaneously. To manage different workloads or multiple KVS installations, we recommend utilizing multiple directories (one folder per project) rather than deploying multiple instances of the Docker image. This approach helps avoid resource contention and simplifies management.
 - **Network Requirements**: This image is optimized for use on open networks that are free of restrictive firewalls or filters. For environments within private networks or those subject to access restrictions, additional configuration steps may be required. Solutions like Tailscale or similar private network services can be utilized to facilitate necessary connectivity and ensure full functionality of the system.
-- **Headless Mode**: There is no headless mode available; you must use the script to proceed with installation. This manual interaction ensures proper setup and configuration according to the provided steps.
 - **Kubernetes (K8S) Support**: At this time, Kubernetes deployment is not supported as it would require extensive modifications and specific interactions with the site utilizing the image. Future updates may address this capability depending on user needs and development resources.
 
 These points should help you tailor the installation to your needs.
