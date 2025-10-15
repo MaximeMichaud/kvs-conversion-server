@@ -67,6 +67,9 @@ RUN mkdir -p /home/vsftpd/ /var/log/vsftpd /var/run/vsftpd/empty \
 # Copy configuration files
 COPY config/vsftpd-base.conf /etc/vsftpd-base.conf
 COPY config/vsftpd-ftp.conf /etc/vsftpd-ftp.conf
+COPY config/vsftpd-ftps.conf /etc/vsftpd-ftps.conf
+COPY config/vsftpd-ftps_implicit.conf /etc/vsftpd-ftps_implicit.conf
+COPY config/vsftpd-ftps_tls.conf /etc/vsftpd-ftps_tls.conf
 COPY --chmod=755 scripts/run-vsftpd.sh /usr/sbin/run-vsftpd.sh
 
 # Folder creation and cron job configuration script

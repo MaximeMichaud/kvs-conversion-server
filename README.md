@@ -39,6 +39,7 @@ The actual performance can vary based on the specific video formats and the conv
 - **Extended PHP Support**: Uses Sury's repository to provide extended PHP version support, incorporating security updates from [Freexian's Debian LTS project](https://www.freexian.com/lts/debian/).
 - **Automated Updates**: Enables automatic updates for all installed packages and added repositories to keep the server secure and up-to-date.
 - **Container Configuration**: Provides the capability to limit CPU usage for Docker containers. This feature allows users to set custom limits on CPU utilization, tailored to their system's capabilities.
+- **FTPS Support**: Full SSL/TLS encryption support for FTP connections with automatic self-signed certificate generation. Supports both explicit mode (AUTH TLS on port 21) and implicit mode (SSL from start on port 990) for enhanced security during file transfers.
 
 ## To-Do
 
@@ -47,8 +48,6 @@ The actual performance can vary based on the specific video formats and the conv
 - **Tailscale Support for Restricted Environments**: Integrate Tailscale to ensure the conversion server operates effectively within private network environments. This approach simplifies connectivity without the complexities of traditional network configuration methods, enhancing secure access and interoperability across restrictive firewalls or network filters.
 
 - **FFmpeg Version Selection**: Implement the option for users to select between different FFmpeg versions (5.x LTS, 6.x, 7.x LTS, 8.x) depending on their specific requirements for video processing capabilities and compatibility with various codecs and formats. Currently, KVS doesn't seem to have any compatibility issues with newer FFmpeg versions.
-
-- **Enabling SSL with vsftpd (FTPS)**: Provide the option to configure SSL for vsftpd to enhance security by enabling FTPS. This feature will allow encrypted file transfers, protecting data integrity and confidentiality during file uploads and downloads.
 
 View the full project details and progress [here](https://github.com/users/MaximeMichaud/projects/3).
 
