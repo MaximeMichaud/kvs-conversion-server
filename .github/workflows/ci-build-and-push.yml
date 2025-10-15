@@ -5,16 +5,16 @@ on:
       - main
     paths:
       - 'kvs-conversion-server.sh'
-      - 'create_folders.sh'
-      - 'run-vsftpd.sh'
+      - 'scripts/create_folders.sh'
+      - 'scripts/run-vsftpd.sh'
       - 'Dockerfile'
   pull_request:
     branches:
       - main
     paths:
       - 'kvs-conversion-server.sh'
-      - 'create_folders.sh'
-      - 'run-vsftpd.sh'
+      - 'scripts/create_folders.sh'
+      - 'scripts/run-vsftpd.sh'
       - 'Dockerfile'
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
         env:
           SHELLCHECK_OPTS: -e SC1091
         with:
-          additional_files: 'kvs-conversion-server.sh create_folders.sh run-vsftpd.sh'
+          additional_files: 'kvs-conversion-server.sh scripts/create_folders.sh scripts/run-vsftpd.sh'
 
   build-and-push-docker:
     needs: [shellcheck, dockerfile-validation]

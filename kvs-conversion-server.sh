@@ -214,7 +214,7 @@ For specific cron task logs from a particular folder, execute:
 
 To check the vsftpd logs for FTP activities, use:
   docker exec conversion-server tail -f /var/log/vsftpd/vsftpd.log
-  
+
 If you need to perform debugging or access the container's shell, you can use the following command:
   docker exec -it conversion-server /bin/bash
 This will provide interactive shell access to the container, allowing you to execute commands and inspect the container's environment directly.

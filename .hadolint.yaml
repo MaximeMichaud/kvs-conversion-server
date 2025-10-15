@@ -6,7 +6,7 @@ ignored:
   - DL3047
   - SC2154
   - SC2016
-  - SC2028 
+  - SC2028
 
 trustedRegistries:
   - myregistry.local
