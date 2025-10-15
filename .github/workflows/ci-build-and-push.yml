@@ -1,5 +1,6 @@
+---
 name: CI and CD Validation
-on:
+on:  # yamllint disable-line rule:truthy
   push:
     branches:
       - main
@@ -128,10 +129,95 @@ jobs:
         run: |
           docker stop kvs-test || true
           docker rm kvs-test || true
+
+  integration-test-ftps:
+    name: Integration Tests (FTPS)
+    needs: [shellcheck, dockerfile-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build Docker image for testing
+        run: docker build -t kvs-conversion-server:test .
+
+      - name: Run Docker container with FTPS Explicit mode
+        run: |
+          docker run -d --name kvs-test-ftps \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e NUM_FOLDERS=3 \
+            -e PHP_VERSION=php8.1 \
+            -e FTP_MODE=ftps \
+            -e LOG_STDOUT=NO \
+            -p 21:21 -p 21100-21110:21100-21110 \
+            kvs-conversion-server:test
+
+      - name: Wait for container to be healthy
+        run: |
+          echo "Waiting for container to be healthy..."
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test-ftps)" == "healthy" ]; do
+            echo "Container status: $(docker ps --filter name=kvs-test-ftps --format "{{.Status}}")";
+            sleep 3;
+          done'
+          echo "Container is healthy!"
+
+      - name: Verify SSL certificates were generated
+        run: |
+          echo "=== Checking SSL certificate files ==="
+          docker exec kvs-test-ftps test -f /etc/ssl/private/vsftpd.pem || (echo "SSL certificate not found!" && exit 1)
+          docker exec kvs-test-ftps test -f /etc/ssl/private/vsftpd.key || (echo "SSL key not found!" && exit 1)
+          echo "SSL certificates found!"
+
+      - name: Verify vsftpd is using FTPS configuration
+        run: |
+          echo "=== Checking vsftpd configuration ==="
+          docker exec kvs-test-ftps grep "ssl_enable=YES" /etc/vsftpd.conf || (echo "SSL not enabled in config!" && exit 1)
+          echo "FTPS is properly configured!"
+
+      - name: Install FTP client with SSL support
+        run: sudo apt-get update && sudo apt-get install -y lftp netcat-openbsd
+
+      - name: Test FTPS connection with explicit SSL/TLS
+        run: |
+          echo "=== Testing FTPS port connectivity ==="
+          timeout 10s bash -c 'until nc -z 127.0.0.1 21; do sleep 1; done'
+          echo "FTPS port 21 is accessible"
+
+      - name: Test FTPS login and operations with SSL
+        run: |
+          echo "=== Testing FTPS login with SSL ==="
+          lftp -u testuser,testpass123 -e "set ssl:verify-certificate no; set ftp:ssl-allow yes; set ftp:ssl-force yes; ls; bye" 127.0.0.1 || (echo "FTPS login failed!" && exit 1)
+          echo "FTPS login successful!"
+
+          echo "=== Testing FTPS file upload with SSL ==="
+          echo "test ftps content" > /tmp/test-ftps.txt
+          lftp -u testuser,testpass123 -e "set ssl:verify-certificate no; set ftp:ssl-allow yes; set ftp:ssl-force yes; put /tmp/test-ftps.txt -o 01/test-ftps.txt; bye" 127.0.0.1
+
+          echo "=== Verifying uploaded file ==="
+          docker exec kvs-test-ftps test -f /home/vsftpd/testuser/01/test-ftps.txt || (echo "FTPS file upload failed!" && exit 1)
+          docker exec kvs-test-ftps cat /home/vsftpd/testuser/01/test-ftps.txt
+          echo "FTPS file uploaded successfully!"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          docker logs kvs-test-ftps
+          echo "=== vsftpd configuration ==="
+          docker exec kvs-test-ftps cat /etc/vsftpd.conf || true
+          echo "=== Container processes ==="
+          docker exec kvs-test-ftps ps aux || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop kvs-test-ftps || true
+          docker rm kvs-test-ftps || true
           docker rmi kvs-conversion-server:test || true
 
   build-and-push-docker:
-    needs: [shellcheck, dockerfile-validation, integration-test]
+    needs: [shellcheck, dockerfile-validation, integration-test, integration-test-ftps]
     name: Docker Build and Push
     runs-on: ubuntu-latest
     permissions:
