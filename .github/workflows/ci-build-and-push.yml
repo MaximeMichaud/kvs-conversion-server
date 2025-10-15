@@ -140,7 +140,7 @@ jobs:
           docker exec kvs-test php8.1 -m | grep -E "curl" || (echo "curl extension missing!" && exit 1)
           docker exec kvs-test php8.1 -m | grep -E "gd" || (echo "gd extension missing!" && exit 1)
           docker exec kvs-test php8.1 -m | grep -E "mbstring" || (echo "mbstring extension missing!" && exit 1)
-          docker exec kvs-test php8.1 -m | grep -E "opcache" || (echo "opcache extension missing!" && exit 1)
+          docker exec kvs-test php8.1 -v | grep -iq "opcache" || (echo "opcache extension missing!" && exit 1)
 
           echo "=== Testing FFmpeg ==="
           docker exec kvs-test ffmpeg -version || (echo "FFmpeg not working!" && exit 1)
