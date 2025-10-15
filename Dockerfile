@@ -20,7 +20,8 @@ RUN printf "Unattended-Upgrade::Origins-Pattern {\n\
     \"origin=Debian,codename=${distro_codename},label=Debian\";\n\
     \"origin=Debian,codename=${distro_codename},label=Debian-Security\";\n\
     \"site=packages.sury.org\";\n\
-};\n" > /etc/apt/apt.conf.d/50unattended-upgrades
+};\n" > /etc/apt/apt.conf.d/50unattended-upgrades && \
+    printf "APT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n" > /etc/apt/apt.conf.d/20auto-upgrades
 
 # Update and install PHP dependencies
 RUN apt-get update && \
