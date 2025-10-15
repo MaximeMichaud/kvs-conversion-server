@@ -16,6 +16,13 @@ set -e
 # Global variables for headless mode
 HEADLESS_MODE=false
 
+# Source CLI management functions if file exists
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/cli-functions.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/cli-functions.sh"
+fi
+
 # Functions
 
 command_exists() {
@@ -24,11 +31,11 @@ command_exists() {
 
 show_usage() {
   cat <<EOF
-Usage: $0 [OPTIONS]
+Usage: $0 [OPTIONS|COMMAND]
 
 KVS Conversion Server installation script with optional headless mode.
 
-OPTIONS:
+INSTALLATION OPTIONS:
   --headless              Enable non-interactive headless mode
   --php-version VERSION   PHP version (php7.4 or php8.1, default: php8.1)
   --ftp-mode MODE         FTP mode (ftp, ftps, or ftps_implicit, default: ftp)
@@ -40,7 +47,17 @@ OPTIONS:
   --auto-stop-container   Auto-stop existing container (default: no)
   -h, --help              Show this help message
 
-EXAMPLES:
+MANAGEMENT COMMANDS:
+  status, ps              Show container status and resource usage
+  logs [-f|--follow]      Show container logs (use -f to follow)
+  start, up               Start the container
+  stop, down              Stop the container
+  restart                 Restart the container
+  info                    Show configuration and container info
+  update                  Update to latest Docker image
+  remove, rm              Remove container and optionally data/config
+
+INSTALLATION EXAMPLES:
   # Interactive mode (default)
   $0
 
@@ -54,6 +71,17 @@ EXAMPLES:
   export KVS_HEADLESS=true
   export KVS_FTP_USER=myuser
   $0
+
+MANAGEMENT EXAMPLES:
+  # Check container status
+  $0 status
+
+  # View logs in real-time
+  $0 logs -f
+
+  # Stop and start container
+  $0 stop
+  $0 start
 
 ENVIRONMENT VARIABLES:
   KVS_HEADLESS            Enable headless mode (true/false)
@@ -548,10 +576,46 @@ check_port_accessibility() {
 }
 
 # Main Execution Flow
+
+# Check if this is a CLI command
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    status|ps|logs|start|up|stop|down|restart|info|update|remove|rm)
+      # Route to CLI command handler
+      if command -v route_command > /dev/null 2>&1; then
+        route_command "$@"
+        exit $?
+      else
+        echo "Error: CLI functions not available. Make sure cli-functions.sh is present."
+        exit 1
+      fi
+      ;;
+    -h|--help)
+      show_usage
+      exit 0
+      ;;
+    --*)
+      # Installation with options, continue to parse_arguments
+      ;;
+    *)
+      echo "Error: Unknown command or option '$1'"
+      echo "Run '$0 --help' for usage information"
+      exit 1
+      ;;
+  esac
+fi
+
+# Installation flow
 parse_arguments "$@"
 check_os_compatibility
 install_docker
 stop_existing_container
 configure_environment
 run_docker_container
+
+# Save configuration for CLI commands
+if command -v save_config > /dev/null 2>&1; then
+  save_config ".kvs-server.conf" "$PHP_VERSION" "$FTP_MODE" "$input_ftp_user" "$input_ftp_pass" "$ipv4_address" "$network_interface" "$num_folders" "$CPU_LIMIT"
+fi
+
 check_port_accessibility
