@@ -32,7 +32,7 @@ repos:
     hooks:
       - id: bashate
         name: "Bashate - Bash code style enforcement"
-        args: ["-i", "E006,E005"]  # Ignore line length and indentation
+        args: ["-i", "E006,E005,E003"]  # Ignore line length and indent style (we use 2 spaces, not 4)
         files: \.(sh|bash)$
 
   # General file checks

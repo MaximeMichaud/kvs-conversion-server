@@ -11,8 +11,13 @@
 # Copyright (c) 2023 MaximeMichaud
 # Licensed under MIT License
 #
+set -e
 
 # Functions
+
+command_exists() {
+    command -v "$@" > /dev/null 2>&1
+}
 
 check_os_compatibility() {
   local os_type
@@ -35,12 +40,12 @@ check_os_compatibility() {
 }
 
 install_docker() {
-  if ! command -v docker &>/dev/null; then
+  if ! command_exists docker; then
     echo -e "Docker is not installed \xE2\x9D\x8C"
     echo "Installing Docker..."
     curl -fsSL https://get.docker.com -o install-docker.sh
     sh install-docker.sh
-    rm install-docker.sh
+    rm -f install-docker.sh
     echo -e "Docker has been installed \xE2\x9C\x85"
   else
     echo -e "Docker is already installed \xE2\x9C\x85"
@@ -246,11 +251,5 @@ EOB
 check_os_compatibility
 install_docker
 stop_existing_container
-read_php_version
-choose_ipv4_acquisition_mode
-get_ipv4_address
-get_network_interface
-get_cpu_limits
-prompt_ftp_credentials
-prompt_for_directory_number
+configure_environment
 run_docker_container

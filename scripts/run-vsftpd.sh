@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Define default values of Environment Variables
 FTP_USER=${FTP_USER:-user}

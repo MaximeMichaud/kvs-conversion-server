@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/bin/bash
+set -e
 
 # Read the environment variables
 NUM_FOLDERS=${NUM_FOLDERS:-5}     # Default value of 5 if not defined
