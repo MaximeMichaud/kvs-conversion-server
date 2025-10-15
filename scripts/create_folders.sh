@@ -17,7 +17,7 @@ done
 
 # Add cron jobs
 CRON_FILE=$(mktemp)
-crontab -l > "$CRON_FILE" 2>/dev/null
+crontab -l > "$CRON_FILE" 2>/dev/null || true
 echo "#KVS Folders Cron Jobs" >> "$CRON_FILE"
 for i in $(seq 1 "$NUM_FOLDERS"); do
   FOLDER_NUM=$(printf "%02d" "$i")

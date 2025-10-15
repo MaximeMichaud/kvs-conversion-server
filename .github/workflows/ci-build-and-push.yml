@@ -59,6 +59,7 @@ jobs:
             -e PASV_ADDRESS=127.0.0.1 \
             -e NUM_FOLDERS=3 \
             -e PHP_VERSION=php8.1 \
+            -e LOG_STDOUT=NO \
             -p 21:21 -p 21100-21110:21100-21110 \
             kvs-conversion-server:test
 

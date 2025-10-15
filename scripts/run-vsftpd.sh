@@ -50,6 +50,9 @@ else
   echo "$FTP_USER:$FTP_PASS" | chpasswd
 fi
 
+# Create user home directory if it doesn't exist
+mkdir -p "/home/vsftpd/$FTP_USER"
+
 # Set ownership for the user's home directory
 chown -R "$FTP_USER:$FTP_USER" "/home/vsftpd/$FTP_USER"
 
