@@ -31,14 +31,14 @@ RUN apt-get update && \
         vsftpd \
         ffmpeg \
         imagemagick \
-        php7.4 \
+        php7.4-cli \
         php7.4-curl \
         php7.4-gd \
         php7.4-ftp \
         php7.4-mbstring \
         php7.4-opcache \
         # php7.4-imagick \
-        php8.1 \
+        php8.1-cli \
         php8.1-curl \
         php8.1-gd \
         php8.1-ftp \
