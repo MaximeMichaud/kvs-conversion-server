@@ -44,8 +44,6 @@ The actual performance can vary based on the specific video formats and the conv
 
 - **Optional IonCube Installation**: Make IonCube loader installation optional based on user needs. This will allow users who have the KVS open-source addon to skip IonCube installation, reducing image size and complexity, while still supporting KVS installations that require IonCube-encoded PHP files.
 
-- **Container Configuration**: Develop the ability to limit CPU usage for the Docker container. This will include user options to customize these limits based on their system capabilities and conversion needs.
-
 - **Network Configuration**: Implement checks to determine if the outbound IPv4 configuration can open ports. Additionally, provide options to configure the server to operate solely on local networks if necessary to enhance security and compliance with internal network policies.
 
 - **Tailscale Support for Restricted Environments**: Integrate Tailscale to ensure the conversion server operates effectively within private network environments. This approach simplifies connectivity without the complexities of traditional network configuration methods, enhancing secure access and interoperability across restrictive firewalls or network filters.
