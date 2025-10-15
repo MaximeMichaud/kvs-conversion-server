@@ -44,8 +44,6 @@ The actual performance can vary based on the specific video formats and the conv
 
 - **Optional IonCube Installation**: Make IonCube loader installation optional based on user needs. This will allow users who have the KVS open-source addon to skip IonCube installation, reducing image size and complexity, while still supporting KVS installations that require IonCube-encoded PHP files.
 
-- **Network Configuration**: Implement checks to determine if the outbound IPv4 configuration can open ports. Additionally, provide options to configure the server to operate solely on local networks if necessary to enhance security and compliance with internal network policies.
-
 - **Tailscale Support for Restricted Environments**: Integrate Tailscale to ensure the conversion server operates effectively within private network environments. This approach simplifies connectivity without the complexities of traditional network configuration methods, enhancing secure access and interoperability across restrictive firewalls or network filters.
 
 - **FFmpeg Version Selection**: Implement the option for users to select between different FFmpeg versions (5.x LTS, 6.x, 7.x LTS, 8.x) depending on their specific requirements for video processing capabilities and compatibility with various codecs and formats. Currently, KVS doesn't seem to have any compatibility issues with newer FFmpeg versions.
@@ -75,7 +73,6 @@ While this script is designed for a straightforward deployment, it may require a
 
 - **Single Instance Recommended**: This script and the corresponding Docker image are not designed for operation across multiple instances simultaneously. To manage different workloads or multiple KVS installations, we recommend utilizing multiple directories (one folder per project) rather than deploying multiple instances of the Docker image. This approach helps avoid resource contention and simplifies management.
 - **Network Requirements**: This image is optimized for use on open networks that are free of restrictive firewalls or filters. For environments within private networks or those subject to access restrictions, additional configuration steps may be required. Solutions like Tailscale or similar private network services can be utilized to facilitate necessary connectivity and ensure full functionality of the system.
-- **Port Checking**: Currently, there is no automated check for open ports during the setup. If you encounter issues related to network limitations, manual adjustments may be necessary.
 - **Headless Mode**: There is no headless mode available; you must use the script to proceed with installation. This manual interaction ensures proper setup and configuration according to the provided steps.
 - **Kubernetes (K8S) Support**: At this time, Kubernetes deployment is not supported as it would require extensive modifications and specific interactions with the site utilizing the image. Future updates may address this capability depending on user needs and development resources.
 

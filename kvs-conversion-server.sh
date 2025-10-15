@@ -247,9 +247,74 @@ Once the container is stopped, you can restart it with the same configuration us
 EOB
 }
 
+check_port_accessibility() {
+  echo ""
+  echo "========================================"
+  echo "Network Port Accessibility Check"
+  echo "========================================"
+  echo ""
+  echo "Checking if Docker is listening on required ports..."
+
+  local all_listening=true
+
+  # Check FTP port 21
+  if command_exists ss; then
+    if ss -tlnp 2>/dev/null | grep -q ":21 "; then
+      echo "✓ Port 21 (FTP) is listening locally"
+    else
+      echo "✗ Port 21 (FTP) is NOT listening locally"
+      all_listening=false
+    fi
+
+    # Check passive mode ports
+    echo "Checking passive mode ports (21100-21110)..."
+    local pasv_ports_ok=false
+    for port in 21100 21105 21110; do
+      if ss -tlnp 2>/dev/null | grep -q ":$port "; then
+        pasv_ports_ok=true
+        break
+      fi
+    done
+
+    if [[ "$pasv_ports_ok" == true ]]; then
+      echo "✓ Passive mode ports (21100-21110) are listening"
+    else
+      echo "✗ Passive mode ports are NOT listening"
+      all_listening=false
+    fi
+  else
+    echo "⚠ Command 'ss' not found, skipping local port check"
+  fi
+
+  echo ""
+  echo "⚠️  IMPORTANT: External Accessibility Check Required"
+  echo ""
+  echo "The checks above only verify that Docker is listening locally."
+  echo "To verify that ports are accessible from the Internet, you must"
+  echo "test from a different computer or network."
+  echo ""
+  echo "From another computer, run:"
+  echo "  telnet $ipv4_address 21"
+  echo "  nc -zv $ipv4_address 21"
+  echo ""
+  echo "Or use an online port checker:"
+  echo "  https://www.yougetsignal.com/tools/open-ports/"
+  echo "  Enter IP: $ipv4_address, Port: 21"
+  echo ""
+
+  if [[ "$all_listening" == false ]]; then
+    echo "⚠️  Warning: Some ports are not listening. Please check Docker logs:"
+    echo "  docker logs conversion-server"
+    echo ""
+  fi
+
+  read -rp "Press Enter to continue..."
+}
+
 # Main Execution Flow
 check_os_compatibility
 install_docker
 stop_existing_container
 configure_environment
 run_docker_container
+check_port_accessibility
