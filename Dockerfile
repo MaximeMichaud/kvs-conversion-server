@@ -79,7 +79,7 @@ COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 EXPOSE 20-22 990 21100-21110
 
 # Health check to verify vsftpd is running
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD pgrep vsftpd || exit 1
 
 # Start command

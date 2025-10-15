@@ -65,7 +65,7 @@ jobs:
       - name: Wait for container to be healthy
         run: |
           echo "Waiting for container to be healthy..."
-          timeout 120s sh -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test)" == "healthy" ]; do
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test)" == "healthy" ]; do
             echo "Container status: $(docker ps --filter name=kvs-test --format "{{.Status}}")";
             sleep 3;
           done'
