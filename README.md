@@ -45,8 +45,6 @@ The actual performance can vary based on the specific video formats and the conv
 
 - **Optional IonCube Installation**: Make IonCube loader installation optional based on user needs. This will allow users who have the KVS open-source addon to skip IonCube installation, reducing image size and complexity, while still supporting KVS installations that require IonCube-encoded PHP files.
 
-- **Tailscale Support for Restricted Environments**: Integrate Tailscale to ensure the conversion server operates effectively within private network environments. This approach simplifies connectivity without the complexities of traditional network configuration methods, enhancing secure access and interoperability across restrictive firewalls or network filters.
-
 - **FFmpeg Version Selection**: Implement the option for users to select between different FFmpeg versions (5.x LTS, 6.x, 7.x LTS, 8.x) depending on their specific requirements for video processing capabilities and compatibility with various codecs and formats. Currently, KVS doesn't seem to have any compatibility issues with newer FFmpeg versions.
 
 View the full project details and progress [here](https://github.com/users/MaximeMichaud/projects/3).
