@@ -1,10 +1,12 @@
 # Using Debian 13 (Trixie) stable as the base
 FROM debian:stable-slim
 
-LABEL Description="Docker image for KVS conversion server, based on Debian 13 (Trixie). Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
-      License="MIT" \
-      Usage="docker run --rm -it --name kvs-conversion-server -p [HOST_CONNECTION_PORTS]:20-22 -p [HOST_FTP_PORTS]:21100-21110 my-kvs-conversion-server-image" \
-      Version="1.1"
+LABEL org.opencontainers.image.title="KVS Conversion Server" \
+      org.opencontainers.image.description="Docker image for KVS conversion server, based on Debian 13 (Trixie). Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/MaximeMichaud/kvs-conversion-server" \
+      org.opencontainers.image.documentation="https://github.com/MaximeMichaud/kvs-conversion-server/blob/main/README.md" \
+      org.opencontainers.image.version="1.2"
 
 # Install necessary tools and add PHP repository
 RUN apt-get update && \
@@ -48,7 +50,7 @@ RUN apt-get update && \
 
 # Install and configure IonCube
 RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz \
-    && tar xvfz ioncube_loaders_lin_x86-64.tar.gz \
+    && tar xzf ioncube_loaders_lin_x86-64.tar.gz \
     && PHP_EXT_DIR_74=$(php7.4 -i | grep extension_dir | awk '{print $3}') \
     && cp "ioncube/ioncube_loader_lin_7.4.so" $PHP_EXT_DIR_74 \
     && echo "zend_extension=$PHP_EXT_DIR_74/ioncube_loader_lin_7.4.so" >> /etc/php/7.4/cli/php.ini \
@@ -58,25 +60,26 @@ RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-
     && rm -rf ioncube ioncube_loaders_lin_x86-64.tar.gz
 
 # Creation of necessary directories
-RUN mkdir -p /home/vsftpd/ \
-    && mkdir -p /var/log/vsftpd \
+RUN mkdir -p /home/vsftpd/ /var/log/vsftpd /var/run/vsftpd/empty \
     && chown -R ftp:ftp /home/vsftpd/
-
-# secure_chroot_dir
-RUN mkdir -p /var/run/vsftpd/empty
 
 # Copy configuration files
 COPY config/vsftpd-base.conf /etc/vsftpd-base.conf
 COPY config/vsftpd-ftp.conf /etc/vsftpd-ftp.conf
-COPY scripts/run-vsftpd.sh /usr/sbin/
-RUN chmod +x /usr/sbin/run-vsftpd.sh
+COPY --chmod=755 scripts/run-vsftpd.sh /usr/sbin/run-vsftpd.sh
 
 # Folder creation and cron job configuration script
-COPY scripts/create_folders.sh /usr/local/bin/create_folders.sh
-RUN chmod +x /usr/local/bin/create_folders.sh
+COPY --chmod=755 scripts/create_folders.sh /usr/local/bin/create_folders.sh
+
+# Copy entrypoint script
+COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Expose ports
 EXPOSE 20-22 990 21100-21110
 
+# Health check to verify vsftpd is running
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD pgrep vsftpd || exit 1
+
 # Start command
-CMD ["sh", "-c", "/usr/local/bin/create_folders.sh && cron && /usr/sbin/run-vsftpd.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
