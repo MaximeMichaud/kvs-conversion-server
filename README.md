@@ -60,7 +60,7 @@ The technologies used depend on what KVS supports, which means that some may not
 
 ## Customization and Limitations
 
-While this script is designed for a straightforward deployment, it may require adjustments based on your server's Here are a few points to consider:
+While this script is designed for a straightforward deployment, it may require adjustments based on your server's needs. Here are a few points to consider:
 
 **Base Image**: The Docker image used in this script is based on `Debian 13 Slim`. This choice was made to balance flexibility and disk space usage. Although Debian Slim uses slightly more disk space compared to Alpine, it was selected over Alpine due to several key advantages:
   - **Compatibility Issues with Alpine**: Alpine Linux presented challenges that would have required additional configuration time and effort. Specifically, Alpine lacks support for certain libraries and tools needed for robust video processing.

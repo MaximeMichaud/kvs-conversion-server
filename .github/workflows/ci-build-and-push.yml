@@ -234,12 +234,16 @@ jobs:
       - name: Test FTPS login and operations with SSL
         run: |
           echo "=== Testing FTPS login with SSL ==="
-          lftp -u testuser,testpass123 -e "set ssl:verify-certificate no; set ftp:ssl-allow yes; set ftp:ssl-force yes; ls; bye" 127.0.0.1 || (echo "FTPS login failed!" && exit 1)
+          lftp -u testuser,testpass123 -e \
+            "set ssl:verify-certificate no; set ftp:ssl-allow yes; set ftp:ssl-force yes; ls; bye" \
+            127.0.0.1 || (echo "FTPS login failed!" && exit 1)
           echo "FTPS login successful!"
 
           echo "=== Testing FTPS file upload with SSL ==="
           echo "test ftps content" > /tmp/test-ftps.txt
-          lftp -u testuser,testpass123 -e "set ssl:verify-certificate no; set ftp:ssl-allow yes; set ftp:ssl-force yes; put /tmp/test-ftps.txt -o 01/test-ftps.txt; bye" 127.0.0.1
+          lftp -u testuser,testpass123 -e \
+            "set ssl:verify-certificate no; set ftp:ssl-allow yes; set ftp:ssl-force yes; put /tmp/test-ftps.txt -o 01/test-ftps.txt; bye" \
+            127.0.0.1
 
           echo "=== Verifying uploaded file ==="
           docker exec kvs-test-ftps test -f /home/vsftpd/testuser/01/test-ftps.txt || (echo "FTPS file upload failed!" && exit 1)

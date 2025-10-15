@@ -1,0 +1,16 @@
+---
+# yamllint configuration for kvs-conversion-server
+# GitHub Actions workflow files commonly have long lines due to command strings
+# See: https://yamllint.readthedocs.io/
+
+extends: default
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable
+  truthy:
+    allowed-values: ['true', 'false', 'on']
