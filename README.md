@@ -60,7 +60,7 @@ bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-se
 
 ### Management Commands
 
-Once installed, manage your container with docker-compose style commands:
+Once installed, manage your container with **Docker Compose** style commands:
 
 ```bash
 # Show container status and resource usage
@@ -97,15 +97,15 @@ Once installed, manage your container with docker-compose style commands:
 
 - **System Architecture**: The script and its dependencies have been tested exclusively on amd64 architectures. Ensure your system complies with this specification to guarantee compatibility.
 
-- **CPU Only Testing**: This script has been tested with CPU-based processing only. We have not conducted tests with dedicated or integrated GPUs. If you are interested in exploring GPU-accelerated processing for video conversion, please open an issue on our GitHub repository to discuss your requirements and potential enhancements.
+- **CPU Only Testing**: This script has been tested with **CPU**-based processing only. We have not conducted tests with dedicated or integrated **GPUs**. If you are interested in exploring **GPU**-accelerated processing for video conversion, please open an issue on our **GitHub** repository to discuss your requirements and potential enhancements.
 
 ### Hardware Recommendations
 
 To ensure *optimal performance* of the video conversion server, the following hardware specifications are *recommended*:
 
-**RAM**: At least 1GB of RAM is *recommended*. *This is generally sufficient for handling the operational overhead of Docker and the basic video processing tasks.*
-**CPU**: A faster CPU is crucial as video conversion is a CPU-intensive process. The speed and number of CPU cores will significantly influence the time required to process videos.
-**Storage**: Sufficient storage space is necessary to accommodate the raw video files and the converted outputs. While an HDD is adequate for storage purposes, the processing capability primarily depends on the CPU power.
+**RAM**: At least 1GB of **RAM** is *recommended*. *This is generally sufficient for handling the operational overhead of **Docker** and the basic video processing tasks.*
+**CPU**: A faster **CPU** is crucial as video conversion is a **CPU**-intensive process. The speed and number of **CPU** cores will significantly influence the time required to process videos.
+**Storage**: Sufficient storage space is necessary to accommodate the raw video files and the converted outputs. While an **HDD** is adequate for storage purposes, the processing capability primarily depends on the **CPU** power.
 
 *Please consider these recommendations as guidelines which reflect the minimum setup required to efficiently use the script and perform video conversions.*
 *The actual performance can vary based on the specific video formats and the conversion settings used.*
@@ -146,8 +146,7 @@ While this script is designed for a straightforward deployment, it may require a
 ### Deployment Considerations / Scalability
 
 - **Single Instance Recommended**: This script and the corresponding **Docker** image are not designed for operation across multiple instances simultaneously. To manage different workloads or multiple **KVS** installations, we *recommend* utilizing multiple directories *(one folder per project)* rather than deploying multiple instances of the **Docker** image. This approach helps avoid resource contention and simplifies management.
-- **Network Requirements**: This image is optimized for use on open networks that are free of restrictive firewalls or filters. For environments within private networks or those subject to access restrictions, additional configuration steps may be required. *Solutions like Tailscale or similar private network services can be utilized to facilitate necessary connectivity and ensure full functionality of the system.*
-- **Kubernetes (K8S) Support**: At this time, **Kubernetes** deployment is *not supported* as it would require extensive modifications and specific interactions with the site utilizing the image. *Future updates may address this capability depending on user needs and development resources.*
+- **Network Requirements**: This image is optimized for use on open networks that are free of restrictive firewalls or filters. For environments within private networks or those subject to access restrictions, additional configuration steps may be required. *Solutions like **Tailscale** / **WireGuard** or similar private network services can be utilized to facilitate necessary connectivity and ensure full functionality of the system.*
 
 These points should help you tailor the installation to your needs.
 
