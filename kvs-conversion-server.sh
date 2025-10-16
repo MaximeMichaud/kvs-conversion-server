@@ -13,6 +13,15 @@
 #
 set -e
 
+# Color definitions using tput for better terminal compatibility
+CYAN=$(tput setaf 6)
+BLUE=$(tput setaf 4)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+RED=$(tput setaf 1)
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
+
 # Global variables for headless mode
 HEADLESS_MODE=false
 
@@ -55,7 +64,7 @@ load_config() {
   config_file=$(find_config_file)
 
   if [[ -z "$config_file" ]]; then
-    echo "Error: Configuration file not found (.kvs-server.conf)"
+    echo "${RED}Error: Configuration file not found (.kvs-server.conf)${RESET}"
     echo "Run './kvs-conversion-server.sh' to install first"
     return 1
   fi
@@ -92,7 +101,7 @@ CONTAINER_NAME=$CONTAINER_NAME
 EOF
 
   chmod 600 "$config_path"
-  echo "Configuration saved to $config_path"
+  echo "${GREEN}✓ Configuration saved to $config_path${RESET}"
 }
 
 # Check if container exists
@@ -113,18 +122,18 @@ cmd_status() {
     return 1
   fi
 
-  echo "=== Container Status ==="
+  echo "${CYAN}${BOLD}=== Container Status ===${RESET}"
   docker ps -a --filter "name=^${CONTAINER_NAME}$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
   echo ""
-  echo "=== Health Status ==="
+  echo "${CYAN}${BOLD}=== Health Status ===${RESET}"
   local health_status
   health_status=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "no healthcheck")
   echo "Health: $health_status"
 
   if container_running; then
     echo ""
-    echo "=== Resource Usage ==="
+    echo "${CYAN}${BOLD}=== Resource Usage ===${RESET}"
     docker stats "$CONTAINER_NAME" --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
   fi
 }
@@ -138,7 +147,7 @@ cmd_logs() {
   fi
 
   if ! container_exists; then
-    echo "Error: Container '$CONTAINER_NAME' does not exist"
+    echo "${RED}Error: Container '$CONTAINER_NAME' does not exist${RESET}"
     return 1
   fi
 
@@ -149,20 +158,20 @@ cmd_logs() {
 # Command: start/up
 cmd_start() {
   if container_running; then
-    echo "Container '$CONTAINER_NAME' is already running"
+    echo "${BLUE}[INFO]${RESET} Container '$CONTAINER_NAME' is already running"
     cmd_status
     return 0
   fi
 
   if container_exists; then
-    echo "Starting existing container '$CONTAINER_NAME'..."
+    echo "${BLUE}Starting existing container '$CONTAINER_NAME'...${RESET}"
     docker start "$CONTAINER_NAME"
-    echo "Container started successfully"
+    echo "${GREEN}✓ Container started successfully${RESET}"
     sleep 2
     cmd_status
   else
     # Container doesn't exist, recreate from config file
-    echo "Container doesn't exist. Recreating from configuration..."
+    echo "${YELLOW}[WARNING]${RESET} Container doesn't exist. Recreating from configuration..."
 
     if ! load_config; then
       return 1
@@ -178,11 +187,11 @@ cmd_start() {
       port_mapping="-p 21:21"
     fi
 
-    echo "Creating and starting container with saved configuration..."
+    echo "${BLUE}Creating and starting container with saved configuration...${RESET}"
     # shellcheck disable=SC2086
     docker run --rm -d --name "$CONTAINER_NAME" --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" -e FTP_USER="$FTP_USER" -e FTP_PASS="$FTP_PASS" -e PASV_ADDRESS="$IPV4_ADDRESS" -e PASV_ADDRESS_INTERFACE="$NETWORK_INTERFACE" -e NUM_FOLDERS="$NUM_FOLDERS" -e PHP_VERSION="$PHP_VERSION" -e FTP_MODE="$FTP_MODE" $port_mapping -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
 
-    echo "Container created and started successfully"
+    echo "${GREEN}✓ Container created and started successfully${RESET}"
     sleep 2
     cmd_status
   fi
@@ -191,25 +200,25 @@ cmd_start() {
 # Command: stop/down
 cmd_stop() {
   if ! container_running; then
-    echo "Container '$CONTAINER_NAME' is not running"
+    echo "${BLUE}[INFO]${RESET} Container '$CONTAINER_NAME' is not running"
     return 0
   fi
 
-  echo "Stopping container '$CONTAINER_NAME'..."
+  echo "${BLUE}Stopping container '$CONTAINER_NAME'...${RESET}"
   docker stop "$CONTAINER_NAME"
-  echo "Container stopped successfully"
+  echo "${GREEN}✓ Container stopped successfully${RESET}"
 }
 
 # Command: restart
 cmd_restart() {
   if ! container_exists; then
-    echo "Error: Container '$CONTAINER_NAME' does not exist"
+    echo "${RED}Error: Container '$CONTAINER_NAME' does not exist${RESET}"
     return 1
   fi
 
-  echo "Restarting container '$CONTAINER_NAME'..."
+  echo "${BLUE}Restarting container '$CONTAINER_NAME'...${RESET}"
   docker restart "$CONTAINER_NAME"
-  echo "Container restarted successfully"
+  echo "${GREEN}✓ Container restarted successfully${RESET}"
   sleep 2
   cmd_status
 }
@@ -220,7 +229,7 @@ cmd_info() {
     return 1
   fi
 
-  echo "=== KVS Conversion Server Configuration ==="
+  echo "${CYAN}${BOLD}=== KVS Conversion Server Configuration ===${RESET}"
   echo ""
   echo "Container:"
   echo "  Name: $CONTAINER_NAME"
@@ -245,7 +254,7 @@ cmd_info() {
 
   if container_running; then
     echo ""
-    echo "=== Live Container Info ==="
+    echo "${CYAN}${BOLD}=== Live Container Info ===${RESET}"
     local container_ip
     container_ip=$(docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME")
     echo "  Container IP: $container_ip"
@@ -265,7 +274,7 @@ cmd_update() {
     return 1
   fi
 
-  echo "=== Updating KVS Conversion Server ==="
+  echo "${CYAN}${BOLD}=== Updating KVS Conversion Server ===${RESET}"
   echo ""
   echo "Pulling latest Docker image..."
   docker pull maximemichaud/kvs-conversion-server:latest
@@ -290,7 +299,7 @@ cmd_update() {
 
 # Command: remove
 cmd_remove() {
-  echo "WARNING: This will remove the container and all its data!"
+  echo "${YELLOW}${BOLD}WARNING: This will remove the container and all its data!${RESET}"
   read -rp "Are you sure you want to continue? (yes/no): " confirm
 
   case "$confirm" in
@@ -300,7 +309,7 @@ cmd_remove() {
       fi
 
       if container_exists; then
-        echo "Removing container..."
+        echo "${BLUE}Removing container...${RESET}"
         docker rm "$CONTAINER_NAME"
       fi
 
@@ -320,7 +329,7 @@ cmd_remove() {
         fi
       fi
 
-      echo "Cleanup completed"
+      echo "${GREEN}✓ Cleanup completed${RESET}"
       ;;
     *)
       echo "Removal cancelled"
@@ -360,7 +369,7 @@ route_command() {
       cmd_remove "$@"
       ;;
     *)
-      echo "Error: Unknown command '$command'"
+      echo "${RED}Error: Unknown command '$command'${RESET}"
       echo "Run '$0 --help' to see available commands"
       return 1
       ;;
@@ -481,7 +490,7 @@ parse_arguments() {
         exit 0
         ;;
       *)
-        echo "Error: Unknown option: $1"
+        echo "${RED}Error: Unknown option: $1${RESET}"
         echo ""
         show_usage
         exit 1
@@ -499,7 +508,7 @@ check_os_compatibility() {
   local os_type
   os_type=$(uname -s)
   if [[ "$os_type" == "CYGWIN"* || "$os_type" == "MINGW"* || "$os_type" == "MSYS"* ]]; then
-    echo "Warning: You are running this script on a Windows system. This script is not fully compatible with Windows environments."
+    echo "${YELLOW}${BOLD}Warning: You are running this script on a Windows system. This script is not fully compatible with Windows environments.${RESET}"
 
     if [[ "$HEADLESS_MODE" == "true" ]]; then
       echo "Headless mode: Proceeding with installation..."
@@ -523,7 +532,7 @@ check_os_compatibility() {
 install_docker() {
   if ! command_exists docker; then
     echo -e "Docker is not installed \xE2\x9D\x8C"
-    echo "Installing Docker..."
+    echo "${BLUE}Installing Docker...${RESET}"
     curl -fsSL https://get.docker.com -o install-docker.sh
     sh install-docker.sh
     rm -f install-docker.sh
@@ -849,9 +858,9 @@ EOB
 
 check_port_accessibility() {
   echo ""
-  echo "========================================"
+  echo "${CYAN}${BOLD}========================================"
   echo "Network Port Accessibility Check"
-  echo "========================================"
+  echo "========================================${RESET}"
   echo ""
   echo "Checking if Docker is listening on required ports..."
 
