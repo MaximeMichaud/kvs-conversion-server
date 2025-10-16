@@ -276,7 +276,7 @@ cmd_update() {
 
   echo "${CYAN}${BOLD}=== Updating KVS Conversion Server ===${RESET}"
   echo ""
-  echo "Pulling latest Docker image..."
+  echo "${BLUE}Pulling latest Docker image...${RESET}"
   docker pull maximemichaud/kvs-conversion-server:latest
 
   if container_running; then
@@ -531,14 +531,14 @@ check_os_compatibility() {
 
 install_docker() {
   if ! command_exists docker; then
-    echo -e "Docker is not installed \xE2\x9D\x8C"
+    echo -e "${RED}Docker is not installed \xE2\x9D\x8C${RESET}"
     echo "${BLUE}Installing Docker...${RESET}"
     curl -fsSL https://get.docker.com -o install-docker.sh
     sh install-docker.sh
     rm -f install-docker.sh
-    echo -e "Docker has been installed \xE2\x9C\x85"
+    echo -e "${GREEN}Docker has been installed \xE2\x9C\x85${RESET}"
   else
-    echo -e "Docker is already installed \xE2\x9C\x85"
+    echo -e "${GREEN}Docker is already installed \xE2\x9C\x85${RESET}"
   fi
 }
 
@@ -546,19 +546,19 @@ stop_existing_container() {
   local container_id
   container_id=$(docker ps -q -f ancestor=maximemichaud/kvs-conversion-server:latest)
   if [[ -n "$container_id" ]]; then
-    echo "A Docker container using 'maximemichaud/kvs-conversion-server:latest' already exists with ID $container_id."
+    echo "${CYAN}A Docker container using 'maximemichaud/kvs-conversion-server:latest' already exists with ID $container_id.${RESET}"
 
     if [[ "$HEADLESS_MODE" == "true" ]] || [[ "${KVS_AUTO_STOP_CONTAINER:-false}" == "true" ]]; then
-      echo "Headless mode: Auto-stopping the existing container..."
+      echo "${BLUE}Headless mode: Auto-stopping the existing container...${RESET}"
       docker stop "$container_id"
-      echo "Container has been stopped successfully."
+      echo "${GREEN}✓ Container has been stopped successfully.${RESET}"
     else
       read -rp "Do you wish to stop this container before proceeding? (yes/no): " stop_response
       case "$stop_response" in
       [Yy]*)
-        echo "Stopping the existing container..."
+        echo "${BLUE}Stopping the existing container...${RESET}"
         docker stop "$container_id"
-        echo "Container has been stopped successfully."
+        echo "${GREEN}✓ Container has been stopped successfully.${RESET}"
         ;;
       [Nn]*) echo "Proceeding without stopping the existing container." ;;
       *)
@@ -590,18 +590,18 @@ read_php_version() {
     PHP_VERSION="php8.1"
     echo "Headless mode: Using default PHP 8.1 (suitable for KVS 6.2 or higher)"
   else
-    echo "Choose the PHP version to use:"
-    echo "1. PHP 7.4 - Recommended if your KVS version is below 6.2."
-    echo "2. PHP 8.1 - Recommended if your KVS version is 6.2 or higher."
+    echo "${CYAN}Choose the PHP version to use:${RESET}"
+    echo "${CYAN}1. PHP 7.4 - Recommended if your KVS version is below 6.2.${RESET}"
+    echo "${CYAN}2. PHP 8.1 - Recommended if your KVS version is 6.2 or higher.${RESET}"
     read -rp "Enter your choice (1 or 2, default is 2 for PHP 8.1): " php_version_choice
     case "$php_version_choice" in
     1)
       PHP_VERSION="php7.4"
-      echo "You have selected PHP 7.4, suitable for KVS versions below 6.2."
+      echo "${GREEN}You have selected PHP 7.4, suitable for KVS versions below 6.2.${RESET}"
       ;;
     *)
       PHP_VERSION="php8.1"
-      echo "PHP 8.1 is the default selection, suitable for KVS 6.2 or higher."
+      echo "${GREEN}PHP 8.1 is the default selection, suitable for KVS 6.2 or higher.${RESET}"
       ;;
     esac
   fi
@@ -616,26 +616,26 @@ read_ftp_mode() {
     FTP_MODE="ftp"
     echo "Headless mode: Using default FTP mode (no encryption)"
   else
-    echo "Choose the FTP mode to use:"
-    echo "1. FTP (no encryption) - Standard FTP without SSL/TLS"
-    echo "2. FTPS Explicit - SSL/TLS encryption via AUTH TLS on port 21 (recommended)"
-    echo "3. FTPS Implicit - SSL/TLS from connection start on port 990"
+    echo "${CYAN}Choose the FTP mode to use:${RESET}"
+    echo "${CYAN}1. FTP (no encryption) - Standard FTP without SSL/TLS${RESET}"
+    echo "${CYAN}2. FTPS Explicit - SSL/TLS encryption via AUTH TLS on port 21 (recommended)${RESET}"
+    echo "${CYAN}3. FTPS Implicit - SSL/TLS from connection start on port 990${RESET}"
     read -rp "Enter your choice (1, 2, or 3, default is 1 for standard FTP): " ftp_mode_choice
     case "$ftp_mode_choice" in
     2)
       FTP_MODE="ftps"
-      echo "You have selected FTPS Explicit mode (AUTH TLS on port 21)."
-      echo "SSL certificates will be generated automatically."
+      echo "${GREEN}You have selected FTPS Explicit mode (AUTH TLS on port 21).${RESET}"
+      echo "${BLUE}SSL certificates will be generated automatically.${RESET}"
       ;;
     3)
       FTP_MODE="ftps_implicit"
-      echo "You have selected FTPS Implicit mode (SSL on port 990)."
-      echo "SSL certificates will be generated automatically."
-      echo "Note: You will need to expose port 990 instead of port 21."
+      echo "${GREEN}You have selected FTPS Implicit mode (SSL on port 990).${RESET}"
+      echo "${BLUE}SSL certificates will be generated automatically.${RESET}"
+      echo "${YELLOW}Note: You will need to expose port 990 instead of port 21.${RESET}"
       ;;
     *)
       FTP_MODE="ftp"
-      echo "Standard FTP mode selected (no encryption)."
+      echo "${GREEN}Standard FTP mode selected (no encryption).${RESET}"
       ;;
     esac
   fi
@@ -792,17 +792,17 @@ run_docker_container() {
   fi
 
   env_vars=(-e FTP_USER="$input_ftp_user" -e FTP_PASS="$input_ftp_pass" -e PASV_ADDRESS="$ipv4_address" -e PASV_ADDRESS_INTERFACE="$network_interface" -e NUM_FOLDERS="$num_folders" -e PHP_VERSION="$PHP_VERSION" -e FTP_MODE="$FTP_MODE")
-  echo "Pulling the Docker image maximemichaud/kvs-conversion-server:latest..."
+  echo "${BLUE}Pulling the Docker image maximemichaud/kvs-conversion-server:latest...${RESET}"
   docker pull maximemichaud/kvs-conversion-server:latest
 
-  echo "Running the Docker image in detached mode..."
+  echo "${BLUE}Running the Docker image in detached mode...${RESET}"
   # shellcheck disable=SC2086
   docker run --rm -d --name conversion-server --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" "${env_vars[@]}" $port_mapping -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
   echo "(DEBUG) Environment variables to be passed: ${env_vars[*]}"
   echo "The Docker container is running with '${host_dir}/data' mounted to '/home/vsftpd' inside the container."
   cat <<EOB
-KVS Conversion Server Configuration:
-------------------------------------
+${CYAN}${BOLD}KVS Conversion Server Configuration:${RESET}
+${CYAN}------------------------------------${RESET}
   . PHP Version: ${PHP_VERSION}
   . FTP Mode: ${FTP_MODE}
   . Maximum tasks: 5 (Default)
@@ -820,24 +820,29 @@ KVS Conversion Server Configuration:
 To add a conversion server, please enter these settings into your website. Note that each FTP directory is designated for single use to ensure isolated processing environments for different tasks or video batches.
 
 For detailed technical logs from the FTP server, use the following command:
-  docker logs conversion-server
+  ./kvs-conversion-server.sh logs
+
+To follow logs in real-time:
+  ./kvs-conversion-server.sh logs -f
 
 For specific cron task logs from a particular folder, execute:
   docker exec conversion-server tail -f /var/log/cron02.log  # Replace '02' with your folder number
 
 To check the vsftpd logs for FTP activities, use:
-  docker exec conversion-server tail -f /var/log/vsftpd/vsftpd.log
+  docker exec conversion-server tail -f /var/log/vsftpd.log
 
 If you need to perform debugging or access the container's shell, you can use the following command:
   docker exec -it conversion-server /bin/bash
 This will provide interactive shell access to the container, allowing you to execute commands and inspect the container's environment directly.
 
-Before attempting to restart the Docker container with the same configuration, make sure to stop the currently running container. This prevents configuration conflicts and ensures that the container can be restarted cleanly with the desired settings.
+To manage the container, use the script commands:
+  ./kvs-conversion-server.sh status    # Show container status
+  ./kvs-conversion-server.sh stop      # Stop the container
+  ./kvs-conversion-server.sh start     # Start the container
+  ./kvs-conversion-server.sh restart   # Restart the container
+  ./kvs-conversion-server.sh info      # Show full configuration
 
-To stop the existing Docker container, run:
-  docker stop conversion-server
-
-Once the container is stopped, you can restart it with the same configuration using the following command:
+For advanced users who need to recreate the container manually with the same configuration:
 
   docker run --rm -d \\
   --name conversion-server \\
@@ -912,8 +917,8 @@ check_port_accessibility() {
   echo ""
 
   if [[ "$all_listening" == false ]]; then
-    echo "⚠️  Warning: Some ports are not listening. Please check Docker logs:"
-    echo "  docker logs conversion-server"
+    echo "${YELLOW}⚠️  Warning: Some ports are not listening. Please check container logs:${RESET}"
+    echo "${CYAN}  ./kvs-conversion-server.sh logs${RESET}"
     echo ""
   fi
 
