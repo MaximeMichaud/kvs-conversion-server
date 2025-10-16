@@ -10,9 +10,84 @@ We strongly recommend all users to thoroughly read this README.md to fully under
 
 ## Usage
 
+### Installation
+
+**Interactive Mode (Default):**
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-server/main/kvs-conversion-server.sh)
 ```
+
+**Headless Mode (Non-Interactive):**
+
+For automated deployments and CI/CD pipelines:
+
+```bash
+# With defaults (php8.1, ftp mode, auto-detect IP)
+bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-server/main/kvs-conversion-server.sh) --headless
+
+# With custom configuration
+bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-server/main/kvs-conversion-server.sh) \
+  --headless \
+  --php-version php8.1 \
+  --ftp-mode ftps \
+  --ftp-user myuser \
+  --ftp-pass secret123 \
+  --num-folders 10 \
+  --cpu-limit 4
+```
+
+**Available Options:**
+- `--headless` - Enable non-interactive mode
+- `--php-version` - PHP version: `php7.4` (KVS < 6.2.0) or `php8.1` (KVS ≥ 6.2.0, default)
+- `--ftp-mode` - FTP mode: `ftp` (default), `ftps`, or `ftps_implicit`
+- `--ftp-user` - FTP username (default: `user`)
+- `--ftp-pass` - FTP password (default: auto-generated)
+- `--ipv4` - IPv4 address for passive mode (default: auto-detected)
+- `--num-folders` - Number of FTP directories (default: `5`)
+- `--cpu-limit` - CPU cores to use (default: all available)
+- `--auto-stop-container` - Automatically stop existing container
+
+**Using Environment Variables:**
+```bash
+export KVS_HEADLESS=true
+export KVS_PHP_VERSION=php8.1
+export KVS_FTP_USER=myuser
+export KVS_FTP_PASS=secret123
+bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-server/main/kvs-conversion-server.sh)
+```
+
+### Management Commands
+
+Once installed, manage your container with docker-compose style commands:
+
+```bash
+# Show container status and resource usage
+./kvs-conversion-server.sh status
+
+# View container logs
+./kvs-conversion-server.sh logs
+./kvs-conversion-server.sh logs -f  # Follow logs in real-time
+
+# Start/stop/restart container
+./kvs-conversion-server.sh start
+./kvs-conversion-server.sh stop
+./kvs-conversion-server.sh restart
+
+# Display full configuration
+./kvs-conversion-server.sh info
+
+# Update to latest Docker image
+./kvs-conversion-server.sh update
+
+# Remove container and optionally data
+./kvs-conversion-server.sh remove
+```
+
+**Command Aliases:**
+- `status` / `ps`
+- `start` / `up`
+- `stop` / `down`
+- `remove` / `rm`
 
 ## Compatibility
 
