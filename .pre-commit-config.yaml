@@ -35,6 +35,14 @@ repos:
         args: ["-i", "E006,E005,E003"]  # Ignore line length and indent style (we use 2 spaces, not 4)
         files: \.(sh|bash)$
 
+  # Markdownlint - Markdown linter
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        name: "Markdownlint - Markdown style checker"
+        args: ["--fix"]
+
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

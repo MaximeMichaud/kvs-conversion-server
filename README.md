@@ -13,6 +13,7 @@ We strongly recommend all users to thoroughly read this README.md to fully under
 ### Installation
 
 **Interactive Mode (Default):**
+
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-server/main/kvs-conversion-server.sh)
 ```
@@ -48,6 +49,7 @@ bash <(curl -s https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion-se
 - `--auto-stop-container` - Automatically stop existing container
 
 **Using Environment Variables:**
+
 ```bash
 export KVS_HEADLESS=true
 export KVS_PHP_VERSION=php8.1
