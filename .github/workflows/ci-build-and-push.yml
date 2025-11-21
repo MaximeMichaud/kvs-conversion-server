@@ -23,7 +23,7 @@ jobs:
     name: Validate Dockerfile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Validate Dockerfile
         uses: ghe-actions/dockerfile-validator@v5
         with:
@@ -34,7 +34,7 @@ jobs:
     name: Shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Run ShellCheck on shell scripts
         uses: ludeeus/action-shellcheck@master
         env:
@@ -47,7 +47,7 @@ jobs:
     needs: [shellcheck, dockerfile-validation]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Build Docker image for testing
         run: docker build -t kvs-conversion-server:test .
@@ -182,7 +182,7 @@ jobs:
     needs: [shellcheck, dockerfile-validation]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Build Docker image for testing
         run: docker build -t kvs-conversion-server:test .
@@ -275,7 +275,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set lowercase owner name
         run: |
