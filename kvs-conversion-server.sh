@@ -152,8 +152,17 @@ write_config_var() {
   printf '%s=%q\n' "$name" "$value"
 }
 
-# Find config file (check current dir, then parent dirs)
+# Find config file (explicit KVS_CONFIG first, then current dir and parent dirs)
 find_config_file() {
+  if [[ -n "${KVS_CONFIG:-}" ]]; then
+    if [[ -f "$KVS_CONFIG" ]]; then
+      echo "$KVS_CONFIG"
+      return 0
+    fi
+
+    return 1
+  fi
+
   local dir="$PWD"
   while [[ "$dir" != "/" ]]; do
     if [[ -f "$dir/$CONFIG_FILE" ]]; then
@@ -162,12 +171,6 @@ find_config_file() {
     fi
     dir=$(dirname "$dir")
   done
-
-  # Check KVS_CONFIG env variable
-  if [[ -n "${KVS_CONFIG:-}" ]] && [[ -f "$KVS_CONFIG" ]]; then
-    echo "$KVS_CONFIG"
-    return 0
-  fi
 
   return 1
 }
@@ -452,6 +455,15 @@ cmd_update() {
 
 # Command: remove
 cmd_remove() {
+  local config_file config_dir data_dir
+  config_file=$(find_config_file || true)
+  if [[ -n "$config_file" ]]; then
+    config_dir=$(dirname "$config_file")
+  else
+    config_dir="$PWD"
+  fi
+  data_dir="$config_dir/data"
+
   echo "${YELLOW}${BOLD}WARNING: This will remove the container and all its data!${RESET}"
   read -rp "Are you sure you want to continue? (yes/no): " confirm
 
@@ -466,19 +478,19 @@ cmd_remove() {
         docker rm "$CONTAINER_NAME"
       fi
 
-      read -rp "Also remove data directory? (yes/no): " remove_data
+      read -rp "Also remove data directory ($data_dir)? (yes/no): " remove_data
       if [[ "$remove_data" =~ ^[Yy] ]]; then
-        rm -rf ./data
-        echo "Data directory removed"
+        rm -rf -- "$data_dir"
+        echo "Data directory removed: $data_dir"
       fi
 
       read -rp "Remove configuration file? (yes/no): " remove_config
       if [[ "$remove_config" =~ ^[Yy] ]]; then
-        local config_file
-        config_file=$(find_config_file)
         if [[ -n "$config_file" ]]; then
-          rm -f "$config_file"
-          echo "Configuration file removed"
+          rm -f -- "$config_file"
+          echo "Configuration file removed: $config_file"
+        else
+          echo "Configuration file not found"
         fi
       fi
 
