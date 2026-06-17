@@ -2,13 +2,16 @@
 FROM debian:stable-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG VERSION=1.3.0
+ARG REVISION=unknown
 
 LABEL org.opencontainers.image.title="KVS Conversion Server" \
       org.opencontainers.image.description="Docker image for KVS conversion server, based on Debian 13 (Trixie). Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/MaximeMichaud/kvs-conversion-server" \
       org.opencontainers.image.documentation="https://github.com/MaximeMichaud/kvs-conversion-server/blob/main/README.md" \
-      org.opencontainers.image.version="1.2"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 
 # Add dpkg excludes for unnecessary files to reduce image size
 RUN printf "path-exclude=/usr/share/X11/*\n\

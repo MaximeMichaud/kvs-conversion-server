@@ -4,11 +4,14 @@ on:  # yamllint disable-line rule:truthy
   push:
     branches:
       - main
+    tags:
+      - 'v*.*.*'
     paths:
       - 'kvs-conversion-server.sh'
       - 'scripts/**'
       - 'config/**'
       - 'Dockerfile'
+      - '.github/workflows/**'
   pull_request:
     branches:
       - main
@@ -17,6 +20,7 @@ on:  # yamllint disable-line rule:truthy
       - 'scripts/**'
       - 'config/**'
       - 'Dockerfile'
+      - '.github/workflows/**'
 
 jobs:
   dockerfile-validation:
@@ -67,6 +71,7 @@ jobs:
       - name: Wait for container to be healthy
         run: |
           echo "Waiting for container to be healthy..."
+          # shellcheck disable=SC2016
           timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test)" == "healthy" ]; do
             echo "Container status: $(docker ps --filter name=kvs-test --format "{{.Status}}")";
             sleep 3;
@@ -127,14 +132,11 @@ jobs:
           docker exec kvs-test php8.1 -r "echo 'PHP 8.1 execution: OK' . PHP_EOL;" || (echo "PHP 8.1 execution failed!" && exit 1)
 
           echo "=== Checking IonCube Loader (optional) ==="
-          set +e  # Temporarily disable exit on error for optional check
-          docker exec kvs-test php8.1 -r "phpinfo();" | grep -qi "ioncube"
-          if [ $? -eq 0 ]; then
+          if docker exec kvs-test php8.1 -r "phpinfo();" | grep -qi "ioncube"; then
             echo "✓ IonCube is loaded for PHP 8.1"
           else
             echo "ℹ IonCube not loaded (optional component)"
           fi
-          set -e  # Re-enable exit on error
 
           echo "=== Testing critical PHP extensions ==="
           docker exec kvs-test php8.1 -m | grep -E "curl" || (echo "curl extension missing!" && exit 1)
@@ -203,6 +205,7 @@ jobs:
       - name: Wait for container to be healthy
         run: |
           echo "Waiting for container to be healthy..."
+          # shellcheck disable=SC2016
           timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test-ftps)" == "healthy" ]; do
             echo "Container status: $(docker ps --filter name=kvs-test-ftps --format "{{.Status}}")";
             sleep 3;
@@ -270,7 +273,7 @@ jobs:
   build-and-push-docker:
     needs: [shellcheck, dockerfile-validation, integration-test, integration-test-ftps]
     name: Docker Build and Push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -280,14 +283,30 @@ jobs:
 
       - name: Set lowercase owner name
         run: |
-          echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
+          echo "OWNER_LC=${OWNER,,}" >>"${GITHUB_ENV}"
         env:
           OWNER: '${{ github.repository_owner }}'
 
+      - name: Set release version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use vMAJOR.MINOR.PATCH format"
+            exit 1
+          fi
+          echo "VERSION=$version" >>"${GITHUB_ENV}"
+          echo "MINOR_VERSION=${version%.*}" >>"${GITHUB_ENV}"
+
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:latest \
-                      -t ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:latest \
+          docker build --build-arg VERSION="${VERSION}" \
+                      --build-arg REVISION="${GITHUB_SHA}" \
+                      -t "${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:${VERSION}" \
+                      -t "${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:${MINOR_VERSION}" \
+                      -t "${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:latest" \
+                      -t "ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:${VERSION}" \
+                      -t "ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:${MINOR_VERSION}" \
+                      -t "ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:latest" \
                       -f Dockerfile .
 
       - name: Login to Docker Hub
@@ -301,7 +320,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push Docker image to Docker Hub
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:latest
+        run: |
+          docker push "${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:${VERSION}"
+          docker push "${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:${MINOR_VERSION}"
+          docker push "${{ secrets.DOCKER_USERNAME }}/kvs-conversion-server:latest"
 
       - name: Push Docker image to GitHub Packages
-        run: docker push ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:latest
+        run: |
+          docker push "ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:${VERSION}"
+          docker push "ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:${MINOR_VERSION}"
+          docker push "ghcr.io/${{ env.OWNER_LC }}/kvs-conversion-server:latest"

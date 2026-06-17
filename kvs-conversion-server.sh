@@ -53,6 +53,9 @@ CONTAINER_NAME="conversion-server"
 CONFIG_FILE=".kvs-server.conf"
 CONFIG_FILE_PATH=""
 CONFIG_DIR=""
+IMAGE_REPOSITORY="maximemichaud/kvs-conversion-server"
+DEFAULT_IMAGE_TAG="1.3.0"
+IMAGE_TAG="$DEFAULT_IMAGE_TAG"
 
 # CLI Management Functions
 # Inspired by docker-compose CLI design
@@ -125,6 +128,19 @@ validate_cpu_limit() {
   fi
 }
 
+validate_image_tag() {
+  local value="$1"
+
+  if [[ ! "$value" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+    print_error "Docker image tag contains invalid characters"
+    exit 1
+  fi
+}
+
+docker_image_ref() {
+  printf '%s:%s' "$IMAGE_REPOSITORY" "$IMAGE_TAG"
+}
+
 write_config_var() {
   local name="$1"
   local value="$2"
@@ -168,6 +184,12 @@ load_config() {
 
   # shellcheck disable=SC1090
   source "$config_file"
+  if [[ -n "${KVS_IMAGE_TAG:-}" ]]; then
+    IMAGE_TAG="$KVS_IMAGE_TAG"
+  else
+    IMAGE_TAG="${IMAGE_TAG:-$DEFAULT_IMAGE_TAG}"
+  fi
+  validate_image_tag "$IMAGE_TAG"
   return 0
 }
 
@@ -182,6 +204,7 @@ save_config() {
   local network_if="${7:-${NETWORK_INTERFACE}}"
   local folders="${8:-${NUM_FOLDERS}}"
   local cpu="${9:-${CPU_LIMIT}}"
+  local image_tag="${10:-${IMAGE_TAG:-$DEFAULT_IMAGE_TAG}}"
 
   {
     echo "# KVS Conversion Server Configuration"
@@ -194,6 +217,7 @@ save_config() {
     write_config_var "NETWORK_INTERFACE" "$network_if"
     write_config_var "NUM_FOLDERS" "$folders"
     write_config_var "CPU_LIMIT" "$cpu"
+    write_config_var "IMAGE_TAG" "$image_tag"
     write_config_var "CONTAINER_NAME" "$CONTAINER_NAME"
   } > "$config_path"
 
@@ -284,9 +308,12 @@ cmd_start() {
       port_mapping="-p 21:21"
     fi
 
+    local image_ref
+    image_ref=$(docker_image_ref)
+
     echo "${BLUE}Creating and starting container with saved configuration...${RESET}"
     # shellcheck disable=SC2086
-    docker run --rm -d --name "$CONTAINER_NAME" --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" -e FTP_USER="$FTP_USER" -e FTP_PASS="$FTP_PASS" -e PASV_ADDRESS="$IPV4_ADDRESS" -e PASV_ADDRESS_INTERFACE="$NETWORK_INTERFACE" -e NUM_FOLDERS="$NUM_FOLDERS" -e PHP_VERSION="$PHP_VERSION" -e FTP_MODE="$FTP_MODE" $port_mapping -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
+    docker run --rm -d --name "$CONTAINER_NAME" --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" -e FTP_USER="$FTP_USER" -e FTP_PASS="$FTP_PASS" -e PASV_ADDRESS="$IPV4_ADDRESS" -e PASV_ADDRESS_INTERFACE="$NETWORK_INTERFACE" -e NUM_FOLDERS="$NUM_FOLDERS" -e PHP_VERSION="$PHP_VERSION" -e FTP_MODE="$FTP_MODE" $port_mapping -p 21100-21110:21100-21110 "$image_ref"
 
     echo "${GREEN}✓ Container created and started successfully${RESET}"
     sleep 2
@@ -348,6 +375,7 @@ cmd_info() {
   echo "  Network Interface: $NETWORK_INTERFACE"
   echo "  CPU Limit: $CPU_LIMIT cores"
   echo "  Folders: $NUM_FOLDERS"
+  echo "  Docker Image: $(docker_image_ref)"
 
   if container_running; then
     echo ""
@@ -373,8 +401,11 @@ cmd_update() {
 
   echo "${CYAN}${BOLD}=== Updating KVS Conversion Server ===${RESET}"
   echo ""
-  echo "${BLUE}Pulling latest Docker image...${RESET}"
-  docker pull maximemichaud/kvs-conversion-server:latest
+  local image_ref
+  image_ref=$(docker_image_ref)
+
+  echo "${BLUE}Pulling Docker image ${image_ref}...${RESET}"
+  docker pull "$image_ref"
 
   if container_running; then
     echo ""
@@ -488,6 +519,7 @@ INSTALLATION OPTIONS:
   --ftp-user USERNAME     FTP username (default: user)
   --ftp-pass PASSWORD     FTP password (default: auto-generated)
   --num-folders NUMBER    Number of FTP folders (default: 5)
+  --image-tag TAG         Docker image tag (default: 1.3.0)
   --auto-stop-container   Auto-stop existing container (default: no)
   -h, --help              Show this help message
 
@@ -498,7 +530,7 @@ MANAGEMENT COMMANDS:
   stop, down              Stop the container
   restart                 Restart the container
   info                    Show configuration and container info
-  update                  Update to latest Docker image
+  update                  Pull the configured Docker image tag
   remove, rm              Remove container and optionally data/config
 
 INSTALLATION EXAMPLES:
@@ -509,7 +541,7 @@ INSTALLATION EXAMPLES:
   $0 --headless
 
   # Headless mode with custom configuration
-  $0 --headless --php-version php8.1 --ftp-user myuser --ftp-pass secret123
+  $0 --headless --php-version php8.1 --ftp-user myuser --image-tag 1.3.0
 
   # Using environment variables
   export KVS_HEADLESS=true
@@ -536,6 +568,7 @@ ENVIRONMENT VARIABLES:
   KVS_FTP_USER            FTP username
   KVS_FTP_PASS            FTP password
   KVS_NUM_FOLDERS         Number of FTP folders
+  KVS_IMAGE_TAG           Docker image tag
   KVS_AUTO_STOP_CONTAINER Auto-stop existing container (true/false)
 
 Note: CLI arguments take precedence over environment variables.
@@ -583,6 +616,11 @@ parse_arguments() {
       --num-folders)
         require_option_value "$1" "${2-}"
         KVS_NUM_FOLDERS="$2"
+        shift 2
+        ;;
+      --image-tag)
+        require_option_value "$1" "${2-}"
+        KVS_IMAGE_TAG="$2"
         shift 2
         ;;
       --auto-stop-container)
@@ -685,6 +723,7 @@ stop_existing_container() {
 configure_environment() {
   read_php_version
   read_ftp_mode
+  set_image_tag
   choose_ipv4_acquisition_mode
   get_ipv4_address
   get_network_interface
@@ -700,6 +739,7 @@ validate_configuration() {
   validate_ipv4_address "$ipv4_address"
   validate_cpu_limit "$CPU_LIMIT"
   validate_positive_integer "Number of folders" "$num_folders"
+  validate_image_tag "$IMAGE_TAG"
 
   formatted_num_folders=$(printf "%02d" "$num_folders")
 }
@@ -723,6 +763,20 @@ validate_provided_options() {
 
   if [[ -n "${KVS_NUM_FOLDERS:-}" ]]; then
     validate_positive_integer "Number of folders" "$KVS_NUM_FOLDERS"
+  fi
+
+  if [[ -n "${KVS_IMAGE_TAG:-}" ]]; then
+    validate_image_tag "$KVS_IMAGE_TAG"
+  fi
+}
+
+set_image_tag() {
+  if [[ -n "${KVS_IMAGE_TAG:-}" ]]; then
+    IMAGE_TAG="$KVS_IMAGE_TAG"
+    echo "Using Docker image tag: $IMAGE_TAG"
+  else
+    IMAGE_TAG="$DEFAULT_IMAGE_TAG"
+    echo "Using default Docker image tag: $IMAGE_TAG"
   fi
 }
 
@@ -918,7 +972,7 @@ prompt_for_directory_number() {
 }
 
 run_docker_container() {
-  local host_dir env_vars ftp_port ftp_ssl port_mapping
+  local host_dir env_vars ftp_port ftp_ssl port_mapping image_ref
   host_dir=$(pwd)
 
   # Determine FTP port and SSL setting based on mode
@@ -937,18 +991,20 @@ run_docker_container() {
   fi
 
   env_vars=(-e FTP_USER="$input_ftp_user" -e FTP_PASS="$input_ftp_pass" -e PASV_ADDRESS="$ipv4_address" -e PASV_ADDRESS_INTERFACE="$network_interface" -e NUM_FOLDERS="$num_folders" -e PHP_VERSION="$PHP_VERSION" -e FTP_MODE="$FTP_MODE")
-  echo "${BLUE}Pulling the Docker image maximemichaud/kvs-conversion-server:latest...${RESET}"
-  docker pull maximemichaud/kvs-conversion-server:latest
+  image_ref=$(docker_image_ref)
+  echo "${BLUE}Pulling the Docker image ${image_ref}...${RESET}"
+  docker pull "$image_ref"
 
   echo "${BLUE}Running the Docker image in detached mode...${RESET}"
   # shellcheck disable=SC2086
-  docker run --rm -d --name conversion-server --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" "${env_vars[@]}" $port_mapping -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
+  docker run --rm -d --name conversion-server --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" "${env_vars[@]}" $port_mapping -p 21100-21110:21100-21110 "$image_ref"
   echo "The Docker container is running with '${host_dir}/data' mounted to '/home/vsftpd' inside the container."
   cat <<EOB
 ${CYAN}${BOLD}KVS Conversion Server Configuration:${RESET}
 ${CYAN}------------------------------------${RESET}
   . PHP Version: ${PHP_VERSION}
   . FTP Mode: ${FTP_MODE}
+  . Docker Image: ${image_ref}
   . Maximum tasks: 5 (Default)
   . CPU usage: Realtime
   . Optimize Content Copying: Allow Pulling Source Files from Primary Server: true
@@ -1000,7 +1056,7 @@ For advanced users who need to recreate the container manually with the same con
   -e PHP_VERSION='${PHP_VERSION}' \\
   -e FTP_MODE='${FTP_MODE}' \\
   ${port_mapping} -p 21100-21110:21100-21110 \\
-  maximemichaud/kvs-conversion-server:latest
+  ${image_ref}
 
 EOB
 }
@@ -1122,7 +1178,7 @@ run_docker_container
 
 # Save configuration for CLI commands
 if command -v save_config > /dev/null 2>&1; then
-  save_config ".kvs-server.conf" "$PHP_VERSION" "$FTP_MODE" "$input_ftp_user" "$input_ftp_pass" "$ipv4_address" "$network_interface" "$num_folders" "$CPU_LIMIT"
+  save_config ".kvs-server.conf" "$PHP_VERSION" "$FTP_MODE" "$input_ftp_user" "$input_ftp_pass" "$ipv4_address" "$network_interface" "$num_folders" "$CPU_LIMIT" "$IMAGE_TAG"
 fi
 
 check_port_accessibility

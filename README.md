@@ -9,6 +9,8 @@ Docker-based remote conversion server for [Kernel Video Sharing (KVS)](https://w
 
 Tested with KVS **6.1.2** and **6.2.1**.
 
+Current release: **1.3.0**.
+
 ## Table of Contents
 
 - [What This Provides](#what-this-provides)
@@ -18,6 +20,7 @@ Tested with KVS **6.1.2** and **6.2.1**.
 - [KVS Configuration Values](#kvs-configuration-values)
 - [Requirements](#requirements)
 - [Included Software](#included-software)
+- [Versioning](#versioning)
 - [Operational Notes](#operational-notes)
 - [Development](#development)
 - [Roadmap](#roadmap)
@@ -56,6 +59,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MaximeMichaud/kvs-conversion
 
 Omit `--ftp-pass` to let headless mode generate a password. Pass it only when your deployment tooling injects a unique secret.
 
+The installer uses Docker image tag `1.3.0` by default.
+
 After installation, the script creates:
 
 - `.kvs-server.conf` - local configuration used by management commands.
@@ -75,6 +80,7 @@ Keep `.kvs-server.conf` private. It contains the FTP password and is written wit
 | `--ipv4 ADDRESS` | Public IPv4 address used for passive FTP. | Auto-detected |
 | `--cpu-limit CORES` | Docker CPU limit. Decimal values are accepted. | All cores |
 | `--num-folders NUMBER` | Number of KVS working directories to create. | `5` |
+| `--image-tag TAG` | Docker image tag to install and save in `.kvs-server.conf`. | `1.3.0` |
 | `--auto-stop-container` | Stop an existing `conversion-server` container during installation. | Disabled |
 
 Environment variables are also supported:
@@ -89,6 +95,7 @@ Environment variables are also supported:
 | `KVS_FTP_USER=myuser` | `--ftp-user myuser` |
 | `KVS_FTP_PASS=unique-secret` | `--ftp-pass unique-secret` |
 | `KVS_NUM_FOLDERS=10` | `--num-folders 10` |
+| `KVS_IMAGE_TAG=1.3.0` | `--image-tag 1.3.0` |
 | `KVS_AUTO_STOP_CONTAINER=true` | `--auto-stop-container` |
 
 CLI options take precedence over environment variables.
@@ -110,7 +117,7 @@ Set `KVS_CONFIG=/path/to/.kvs-server.conf` when managing an installation from an
 | `./kvs-conversion-server.sh stop` | Stop the container. |
 | `./kvs-conversion-server.sh restart` | Restart the container. |
 | `./kvs-conversion-server.sh info` | Show saved configuration and live container details. |
-| `./kvs-conversion-server.sh update` | Pull the latest Docker image. |
+| `./kvs-conversion-server.sh update` | Pull the configured Docker image tag. |
 | `./kvs-conversion-server.sh remove` | Remove the container and optionally remove local data/config files. |
 
 Aliases:
@@ -178,6 +185,18 @@ The image is based on Debian 13 slim and includes:
 
 PHP packages are installed from [packages.sury.org](https://sury.org), which provides maintained builds for multiple PHP versions on Debian.
 
+## Versioning
+
+Git release tags use `vMAJOR.MINOR.PATCH`, for example `v1.3.0`.
+
+Docker image tags omit the `v` prefix. Release `v1.3.0` publishes:
+
+- `maximemichaud/kvs-conversion-server:1.3.0`
+- `maximemichaud/kvs-conversion-server:1.3`
+- `maximemichaud/kvs-conversion-server:latest`
+
+The installer defaults to `1.3.0`. Use `--image-tag latest` only when you intentionally want the moving latest image.
+
 ## Operational Notes
 
 ### Data Layout
@@ -216,6 +235,15 @@ shellcheck --severity=warning kvs-conversion-server.sh scripts/create_folders.sh
 hadolint Dockerfile
 yamllint .github .pre-commit-config.yaml .yamllint .hadolint.yaml
 docker build -t kvs-conversion-server:test .
+```
+
+Build with release metadata:
+
+```bash
+docker build \
+  --build-arg VERSION=1.3.0 \
+  --build-arg REVISION=test \
+  -t kvs-conversion-server:test .
 ```
 
 Run the container manually for local testing:
