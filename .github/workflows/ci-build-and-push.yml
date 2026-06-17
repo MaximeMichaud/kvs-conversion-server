@@ -9,6 +9,7 @@ on:  # yamllint disable-line rule:truthy
     paths:
       - 'kvs-conversion-server.sh'
       - 'scripts/**'
+      - 'tests/**'
       - 'config/**'
       - 'Dockerfile'
       - '.github/workflows/**'
@@ -18,6 +19,7 @@ on:  # yamllint disable-line rule:truthy
     paths:
       - 'kvs-conversion-server.sh'
       - 'scripts/**'
+      - 'tests/**'
       - 'config/**'
       - 'Dockerfile'
       - '.github/workflows/**'
@@ -44,7 +46,17 @@ jobs:
         env:
           SHELLCHECK_OPTS: -e SC1091
         with:
-          additional_files: 'kvs-conversion-server.sh scripts/create_folders.sh scripts/run-vsftpd.sh scripts/entrypoint.sh'
+          additional_files: 'kvs-conversion-server.sh scripts/create_folders.sh scripts/run-vsftpd.sh scripts/entrypoint.sh tests/info-password-recovery.bash'
+
+  script-tests:
+    name: Script Tests
+    needs: [shellcheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run CLI behavior tests
+        run: bash tests/info-password-recovery.bash
 
   integration-test:
     name: Integration Tests
@@ -271,7 +283,7 @@ jobs:
           docker rmi kvs-conversion-server:test || true
 
   build-and-push-docker:
-    needs: [shellcheck, dockerfile-validation, integration-test, integration-test-ftps]
+    needs: [shellcheck, dockerfile-validation, script-tests, integration-test, integration-test-ftps]
     name: Docker Build and Push
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest

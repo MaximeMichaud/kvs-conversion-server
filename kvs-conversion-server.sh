@@ -141,6 +141,10 @@ docker_image_ref() {
   printf '%s:%s' "$IMAGE_REPOSITORY" "$IMAGE_TAG"
 }
 
+mask_secret() {
+  printf '********'
+}
+
 write_config_var() {
   local name="$1"
   local value="$2"
@@ -223,6 +227,8 @@ save_config() {
 
   chmod 600 "$config_path"
   echo "${GREEN}✓ Configuration saved to $config_path${RESET}"
+  echo "Keep $config_path private. It contains the FTP password required by KVS."
+  echo "To recover it later, read FTP_PASS from $config_path or run the script with 'info --show-password'."
 }
 
 # Check if container exists
@@ -349,6 +355,21 @@ cmd_restart() {
 
 # Command: info
 cmd_info() {
+  local show_password=false
+
+  case "${1:-}" in
+    "")
+      ;;
+    --show-password)
+      show_password=true
+      ;;
+    *)
+      print_error "Unknown option for info: $1"
+      echo "Run '$0 --help' for usage information"
+      return 1
+      ;;
+  esac
+
   if ! load_config; then
     return 1
   fi
@@ -371,7 +392,11 @@ cmd_info() {
   echo "  FTP Mode: $FTP_MODE"
   echo "  FTP Host: $IPV4_ADDRESS"
   echo "  FTP User: $FTP_USER"
-  echo "  FTP Password: ${FTP_PASS:0:3}***"
+  if [[ "$show_password" == true ]]; then
+    echo "  FTP Password: $FTP_PASS"
+  else
+    echo "  FTP Password: $(mask_secret) (stored in $CONFIG_FILE_PATH; use info --show-password to reveal)"
+  fi
   echo "  Network Interface: $NETWORK_INTERFACE"
   echo "  CPU Limit: $CPU_LIMIT cores"
   echo "  Folders: $NUM_FOLDERS"
@@ -529,7 +554,7 @@ MANAGEMENT COMMANDS:
   start, up               Start the container
   stop, down              Stop the container
   restart                 Restart the container
-  info                    Show configuration and container info
+  info [--show-password] Show configuration and container info
   update                  Pull the configured Docker image tag
   remove, rm              Remove container and optionally data/config
 
