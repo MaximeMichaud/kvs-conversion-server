@@ -47,8 +47,8 @@ if id "$FTP_USER" >/dev/null 2>&1; then
 else
   echo "Creating user $FTP_USER."
   useradd -u "$USER_ID" -g "$FTP_USER" -d "/home/vsftpd/$FTP_USER" "$FTP_USER"
-  echo "$FTP_USER:$FTP_PASS" | chpasswd
 fi
+echo "$FTP_USER:$FTP_PASS" | chpasswd
 
 # Create user home directory if it doesn't exist
 mkdir -p "/home/vsftpd/$FTP_USER"
@@ -91,7 +91,7 @@ cat <<EOB
   SERVER SETTINGS
   ---------------
   . FTP_USER: "${FTP_USER}"
-  . FTP_PASS: "${FTP_PASS}"
+  . FTP_PASS: "********"
   . PASV_ENABLE: "${PASV_ENABLE}"
   . PASV_ADDRESS: "${PASV_ADDRESS}"
   . PASV_ADDRESS_INTERFACE: "${PASV_ADDRESS_INTERFACE}"

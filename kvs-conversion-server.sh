@@ -13,14 +13,37 @@
 #
 set -e
 
-# Color definitions using tput for better terminal compatibility
-CYAN=$(tput setaf 6)
-BLUE=$(tput setaf 4)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-RED=$(tput setaf 1)
-BOLD=$(tput bold)
-RESET=$(tput sgr0)
+command_exists() {
+  command -v "$@" >/dev/null 2>&1
+}
+
+setup_colors() {
+  CYAN=""
+  BLUE=""
+  GREEN=""
+  YELLOW=""
+  RED=""
+  BOLD=""
+  RESET=""
+
+  if [[ -n "${NO_COLOR:-}" ]] || [[ ! -t 1 ]] || [[ -z "${TERM:-}" ]] || ! command_exists tput; then
+    return 0
+  fi
+
+  local color_count
+  color_count=$(tput colors 2>/dev/null || echo 0)
+  if [[ "$color_count" =~ ^[0-9]+$ ]] && ((color_count >= 8)); then
+    CYAN=$(tput setaf 6)
+    BLUE=$(tput setaf 4)
+    GREEN=$(tput setaf 2)
+    YELLOW=$(tput setaf 3)
+    RED=$(tput setaf 1)
+    BOLD=$(tput bold)
+    RESET=$(tput sgr0)
+  fi
+}
+
+setup_colors
 
 # Global variables for headless mode
 HEADLESS_MODE=false
@@ -28,15 +51,86 @@ HEADLESS_MODE=false
 # CLI Management Constants
 CONTAINER_NAME="conversion-server"
 CONFIG_FILE=".kvs-server.conf"
-
-# Functions
-
-command_exists() {
-    command -v "$@" > /dev/null 2>&1
-}
+CONFIG_FILE_PATH=""
+CONFIG_DIR=""
 
 # CLI Management Functions
 # Inspired by docker-compose CLI design
+
+print_error() {
+  echo "${RED}Error: $*${RESET}" >&2
+}
+
+require_option_value() {
+  local option="$1"
+  local value="${2-}"
+
+  if [[ -z "$value" ]] || [[ "$value" == --* ]]; then
+    print_error "Option '$option' requires a value"
+    exit 1
+  fi
+}
+
+validate_php_version() {
+  local value="$1"
+  if [[ ! "$value" =~ ^(php7\.4|php8\.1)$ ]]; then
+    print_error "PHP version must be 'php7.4' or 'php8.1'"
+    exit 1
+  fi
+}
+
+validate_ftp_mode() {
+  local value="$1"
+  if [[ ! "$value" =~ ^(ftp|ftps|ftps_implicit)$ ]]; then
+    print_error "FTP mode must be 'ftp', 'ftps', or 'ftps_implicit'"
+    exit 1
+  fi
+}
+
+validate_ipv4_address() {
+  local value="$1"
+  local octet
+  local -a octets
+
+  if [[ ! "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    print_error "IPv4 address must use dotted decimal notation"
+    exit 1
+  fi
+
+  IFS=. read -r -a octets <<< "$value"
+  for octet in "${octets[@]}"; do
+    if ((10#$octet < 0 || 10#$octet > 255)); then
+      print_error "IPv4 address contains an invalid octet: $octet"
+      exit 1
+    fi
+  done
+}
+
+validate_positive_integer() {
+  local name="$1"
+  local value="$2"
+
+  if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    print_error "$name must be a positive integer"
+    exit 1
+  fi
+}
+
+validate_cpu_limit() {
+  local value="$1"
+
+  if [[ ! "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] || ! awk -v value="$value" 'BEGIN { exit !(value > 0) }'; then
+    print_error "CPU limit must be a positive number"
+    exit 1
+  fi
+}
+
+write_config_var() {
+  local name="$1"
+  local value="$2"
+
+  printf '%s=%q\n' "$name" "$value"
+}
 
 # Find config file (check current dir, then parent dirs)
 find_config_file() {
@@ -69,6 +163,9 @@ load_config() {
     return 1
   fi
 
+  CONFIG_FILE_PATH="$config_file"
+  CONFIG_DIR=$(dirname "$config_file")
+
   # shellcheck disable=SC1090
   source "$config_file"
   return 0
@@ -86,19 +183,19 @@ save_config() {
   local folders="${8:-${NUM_FOLDERS}}"
   local cpu="${9:-${CPU_LIMIT}}"
 
-  cat > "$config_path" <<EOF
-# KVS Conversion Server Configuration
-# Generated on $(date)
-PHP_VERSION=$php_version
-FTP_MODE=$ftp_mode
-FTP_USER=$ftp_user
-FTP_PASS=$ftp_pass
-IPV4_ADDRESS=$ipv4
-NETWORK_INTERFACE=$network_if
-NUM_FOLDERS=$folders
-CPU_LIMIT=$cpu
-CONTAINER_NAME=$CONTAINER_NAME
-EOF
+  {
+    echo "# KVS Conversion Server Configuration"
+    echo "# Generated on $(date)"
+    write_config_var "PHP_VERSION" "$php_version"
+    write_config_var "FTP_MODE" "$ftp_mode"
+    write_config_var "FTP_USER" "$ftp_user"
+    write_config_var "FTP_PASS" "$ftp_pass"
+    write_config_var "IPV4_ADDRESS" "$ipv4"
+    write_config_var "NETWORK_INTERFACE" "$network_if"
+    write_config_var "NUM_FOLDERS" "$folders"
+    write_config_var "CPU_LIMIT" "$cpu"
+    write_config_var "CONTAINER_NAME" "$CONTAINER_NAME"
+  } > "$config_path"
 
   chmod 600 "$config_path"
   echo "${GREEN}✓ Configuration saved to $config_path${RESET}"
@@ -178,7 +275,7 @@ cmd_start() {
     fi
 
     local host_dir port_mapping
-    host_dir=$(pwd)
+    host_dir="${CONFIG_DIR:-$PWD}"
 
     # Determine port mapping based on FTP_MODE
     if [[ "$FTP_MODE" == "ftps_implicit" ]]; then
@@ -265,7 +362,7 @@ cmd_info() {
   fi
 
   echo ""
-  echo "Config file: $(find_config_file || echo 'not found')"
+  echo "Config file: ${CONFIG_FILE_PATH:-$(find_config_file || echo 'not found')}"
 }
 
 # Command: update
@@ -454,30 +551,37 @@ parse_arguments() {
         shift
         ;;
       --php-version)
+        require_option_value "$1" "${2-}"
         KVS_PHP_VERSION="$2"
         shift 2
         ;;
       --ftp-mode)
+        require_option_value "$1" "${2-}"
         KVS_FTP_MODE="$2"
         shift 2
         ;;
       --ipv4)
+        require_option_value "$1" "${2-}"
         KVS_IPV4_ADDRESS="$2"
         shift 2
         ;;
       --cpu-limit)
+        require_option_value "$1" "${2-}"
         KVS_CPU_LIMIT="$2"
         shift 2
         ;;
       --ftp-user)
+        require_option_value "$1" "${2-}"
         KVS_FTP_USER="$2"
         shift 2
         ;;
       --ftp-pass)
+        require_option_value "$1" "${2-}"
         KVS_FTP_PASS="$2"
         shift 2
         ;;
       --num-folders)
+        require_option_value "$1" "${2-}"
         KVS_NUM_FOLDERS="$2"
         shift 2
         ;;
@@ -544,28 +648,36 @@ install_docker() {
 
 stop_existing_container() {
   local container_id
-  container_id=$(docker ps -q -f ancestor=maximemichaud/kvs-conversion-server:latest)
+  container_id=$(docker ps -aq --format '{{.ID}} {{.Names}}' | awk -v name="$CONTAINER_NAME" '$2 == name { print $1; exit }')
   if [[ -n "$container_id" ]]; then
-    echo "${CYAN}A Docker container using 'maximemichaud/kvs-conversion-server:latest' already exists with ID $container_id.${RESET}"
+    echo "${CYAN}A Docker container named '$CONTAINER_NAME' already exists with ID $container_id.${RESET}"
 
-    if [[ "$HEADLESS_MODE" == "true" ]] || [[ "${KVS_AUTO_STOP_CONTAINER:-false}" == "true" ]]; then
+    if container_running && { [[ "$HEADLESS_MODE" == "true" ]] || [[ "${KVS_AUTO_STOP_CONTAINER:-false}" == "true" ]]; }; then
       echo "${BLUE}Headless mode: Auto-stopping the existing container...${RESET}"
-      docker stop "$container_id"
+      docker stop "$CONTAINER_NAME"
       echo "${GREEN}✓ Container has been stopped successfully.${RESET}"
-    else
+    elif container_running; then
       read -rp "Do you wish to stop this container before proceeding? (yes/no): " stop_response
       case "$stop_response" in
       [Yy]*)
         echo "${BLUE}Stopping the existing container...${RESET}"
-        docker stop "$container_id"
+        docker stop "$CONTAINER_NAME"
         echo "${GREEN}✓ Container has been stopped successfully.${RESET}"
         ;;
-      [Nn]*) echo "Proceeding without stopping the existing container." ;;
+      [Nn]*)
+        echo "Installation cancelled because container name '$CONTAINER_NAME' is already in use."
+        exit 1
+        ;;
       *)
         echo "Invalid input. Please answer yes (y) or no (n). Exiting script."
         exit 1
         ;;
       esac
+    fi
+
+    if container_exists; then
+      echo "${RED}Container name '$CONTAINER_NAME' is still in use. Remove it with './kvs-conversion-server.sh remove' or rename it before installing.${RESET}"
+      exit 1
     fi
   fi
 }
@@ -579,6 +691,39 @@ configure_environment() {
   get_cpu_limits
   prompt_ftp_credentials
   prompt_for_directory_number
+  validate_configuration
+}
+
+validate_configuration() {
+  validate_php_version "$PHP_VERSION"
+  validate_ftp_mode "$FTP_MODE"
+  validate_ipv4_address "$ipv4_address"
+  validate_cpu_limit "$CPU_LIMIT"
+  validate_positive_integer "Number of folders" "$num_folders"
+
+  formatted_num_folders=$(printf "%02d" "$num_folders")
+}
+
+validate_provided_options() {
+  if [[ -n "${KVS_PHP_VERSION:-}" ]]; then
+    validate_php_version "$KVS_PHP_VERSION"
+  fi
+
+  if [[ -n "${KVS_FTP_MODE:-}" ]]; then
+    validate_ftp_mode "$KVS_FTP_MODE"
+  fi
+
+  if [[ -n "${KVS_IPV4_ADDRESS:-}" ]]; then
+    validate_ipv4_address "$KVS_IPV4_ADDRESS"
+  fi
+
+  if [[ -n "${KVS_CPU_LIMIT:-}" ]]; then
+    validate_cpu_limit "$KVS_CPU_LIMIT"
+  fi
+
+  if [[ -n "${KVS_NUM_FOLDERS:-}" ]]; then
+    validate_positive_integer "Number of folders" "$KVS_NUM_FOLDERS"
+  fi
 }
 
 read_php_version() {
@@ -671,17 +816,19 @@ get_ipv4_address() {
 
 get_network_interface() {
   local ip_route_info
-  local network_interface
-  local ipv4_address
-  ip_route_info=$(ip route get 1.1.1.1)
-  network_interface=$(echo "$ip_route_info" | grep -oP 'dev \K\S+')
+  ip_route_info=""
+
+  if command_exists ip; then
+    ip_route_info=$(ip route get 1.1.1.1 2>/dev/null || true)
+  fi
+
+  network_interface=$(awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }' <<< "$ip_route_info")
 
   if [ -z "$network_interface" ]; then
     echo "Could not find the primary network interface. Using default 'eth0'."
     network_interface="eth0"
   else
     echo "Primary network interface: $network_interface"
-    echo "Associated IP address: $ipv4_address"
   fi
 }
 
@@ -768,8 +915,6 @@ prompt_for_directory_number() {
     read -rp "Enter the number of folders (default is 5): " num_folders
     num_folders=${num_folders:-5} # If no input, default to 5
   fi
-  # Format the folder number with leading zeros for numbers less than 10
-  formatted_num_folders=$(printf "%02d" "$num_folders")
 }
 
 run_docker_container() {
@@ -798,7 +943,6 @@ run_docker_container() {
   echo "${BLUE}Running the Docker image in detached mode...${RESET}"
   # shellcheck disable=SC2086
   docker run --rm -d --name conversion-server --cpus="$CPU_LIMIT" -v "${host_dir}/data:/home/vsftpd" "${env_vars[@]}" $port_mapping -p 21100-21110:21100-21110 maximemichaud/kvs-conversion-server:latest
-  echo "(DEBUG) Environment variables to be passed: ${env_vars[*]}"
   echo "The Docker container is running with '${host_dir}/data' mounted to '/home/vsftpd' inside the container."
   cat <<EOB
 ${CYAN}${BOLD}KVS Conversion Server Configuration:${RESET}
@@ -862,6 +1006,16 @@ EOB
 }
 
 check_port_accessibility() {
+  local ftp_port ftp_label
+
+  if [[ "$FTP_MODE" == "ftps_implicit" ]]; then
+    ftp_port="990"
+    ftp_label="FTPS implicit"
+  else
+    ftp_port="21"
+    ftp_label="FTP/FTPS explicit"
+  fi
+
   echo ""
   echo "${CYAN}${BOLD}========================================"
   echo "Network Port Accessibility Check"
@@ -871,12 +1025,12 @@ check_port_accessibility() {
 
   local all_listening=true
 
-  # Check FTP port 21
+  # Check the active control port
   if command_exists ss; then
-    if ss -tlnp 2>/dev/null | grep -q ":21 "; then
-      echo "✓ Port 21 (FTP) is listening locally"
+    if ss -tlnp 2>/dev/null | grep -q ":$ftp_port "; then
+      echo "✓ Port $ftp_port ($ftp_label) is listening locally"
     else
-      echo "✗ Port 21 (FTP) is NOT listening locally"
+      echo "✗ Port $ftp_port ($ftp_label) is NOT listening locally"
       all_listening=false
     fi
 
@@ -908,12 +1062,12 @@ check_port_accessibility() {
   echo "test from a different computer or network."
   echo ""
   echo "From another computer, run:"
-  echo "  telnet $ipv4_address 21"
-  echo "  nc -zv $ipv4_address 21"
+  echo "  telnet $ipv4_address $ftp_port"
+  echo "  nc -zv $ipv4_address $ftp_port"
   echo ""
   echo "Or use an online port checker:"
   echo "  https://www.yougetsignal.com/tools/open-ports/"
-  echo "  Enter IP: $ipv4_address, Port: 21"
+  echo "  Enter IP: $ipv4_address, Port: $ftp_port"
   echo ""
 
   if [[ "$all_listening" == false ]]; then
@@ -959,6 +1113,7 @@ fi
 
 # Installation flow
 parse_arguments "$@"
+validate_provided_options
 check_os_compatibility
 install_docker
 stop_existing_container

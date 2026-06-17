@@ -270,6 +270,7 @@ jobs:
   build-and-push-docker:
     needs: [shellcheck, dockerfile-validation, integration-test, integration-test-ftps]
     name: Docker Build and Push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read

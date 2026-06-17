@@ -1,6 +1,8 @@
 # Using Debian 13 (Trixie) stable as the base
 FROM debian:stable-slim
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 LABEL org.opencontainers.image.title="KVS Conversion Server" \
       org.opencontainers.image.description="Docker image for KVS conversion server, based on Debian 13 (Trixie). Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
       org.opencontainers.image.licenses="MIT" \
@@ -34,6 +36,7 @@ RUN printf "Unattended-Upgrade::Origins-Pattern {\n\
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         bash \
+        iproute2 \
         openssl \
         vsftpd \
         ffmpeg \
