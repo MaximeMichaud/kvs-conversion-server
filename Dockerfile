@@ -1,12 +1,12 @@
-# Using Debian 13 (Trixie) stable as the base
-FROM debian:stable-slim
+# Using Debian 13 (Trixie) as the base
+FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG VERSION=1.3.0
+ARG VERSION=dev
 ARG REVISION=unknown
 
 LABEL org.opencontainers.image.title="KVS Conversion Server" \
-      org.opencontainers.image.description="Docker image for KVS conversion server, based on Debian 13 (Trixie). Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
+      org.opencontainers.image.description="Docker image for KVS conversion server, based on Debian 13 (Trixie) slim. Supports passive mode and virtual users for vsftpd. Includes PHP with IonCube." \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/MaximeMichaud/kvs-conversion-server" \
       org.opencontainers.image.documentation="https://github.com/MaximeMichaud/kvs-conversion-server/blob/main/README.md" \
@@ -28,37 +28,46 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Configure unattended-upgrades for automatic updates including custom repositories
-RUN printf "Unattended-Upgrade::Origins-Pattern {\n\
-    \"origin=Debian,codename=${distro_codename},label=Debian\";\n\
-    \"origin=Debian,codename=${distro_codename},label=Debian-Security\";\n\
-    \"site=packages.sury.org\";\n\
-};\n" > /etc/apt/apt.conf.d/50unattended-upgrades && \
-    printf "APT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n" > /etc/apt/apt.conf.d/20auto-upgrades
+RUN distro_codename=$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release | tr -d '"') && \
+    printf '%s\n' \
+        'Unattended-Upgrade::Origins-Pattern {' \
+        "    \"origin=Debian,codename=${distro_codename},label=Debian\";" \
+        "    \"origin=Debian,codename=${distro_codename},label=Debian-Security\";" \
+        '    "site=packages.sury.org";' \
+        '};' > /etc/apt/apt.conf.d/50unattended-upgrades && \
+    printf '%s\n' \
+        'APT::Periodic::Update-Package-Lists "1";' \
+        'APT::Periodic::Unattended-Upgrade "1";' > /etc/apt/apt.conf.d/20auto-upgrades
+
+# Copy project defaults before package installation so Docker packages and runtime validation use one version list.
+COPY kvs-conversion-server.sh /usr/local/lib/kvs/kvs-conversion-server.sh
+COPY scripts/php-support.sh /usr/local/lib/kvs/php-support.sh
 
 # Update and install PHP dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+    supported_php_versions=$(awk -F= '$1 == "SUPPORTED_PHP_VERSIONS" { gsub(/"/, "", $2); print $2; exit }' /usr/local/lib/kvs/kvs-conversion-server.sh) && \
+    test -n "$supported_php_versions" && \
+    set -- \
+        acl \
         bash \
         iproute2 \
         openssl \
         vsftpd \
         ffmpeg \
         imagemagick \
-        php7.4-cli \
-        php7.4-curl \
-        php7.4-gd \
-        php7.4-ftp \
-        php7.4-mbstring \
-        php7.4-opcache \
-        # php7.4-imagick \
-        php8.1-cli \
-        php8.1-curl \
-        php8.1-gd \
-        php8.1-ftp \
-        php8.1-mbstring \
-        php8.1-opcache \
-        # php8.1-imagick \
-        cron && \
+        cron; \
+    for supported_php_version in $supported_php_versions; do \
+        php_version=${supported_php_version#php}; \
+        set -- "$@" \
+            "php${php_version}-cli" \
+            "php${php_version}-curl" \
+            "php${php_version}-gd" \
+            "php${php_version}-ftp" \
+            "php${php_version}-mbstring" \
+            "php${php_version}-opcache"; \
+    done; \
+    apt-get install -y --no-install-recommends \
+        "$@" && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/debconf/* && \
     find /usr/share/doc -mindepth 1 -type f ! -name copyright -delete && \
@@ -70,18 +79,21 @@ RUN apt-get update && \
     (find /usr -type f -name '*.pyo' -delete 2>/dev/null || true)
 
 # Install and configure IonCube
-RUN wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz \
+RUN supported_php_versions=$(awk -F= '$1 == "SUPPORTED_PHP_VERSIONS" { gsub(/"/, "", $2); print $2; exit }' /usr/local/lib/kvs/kvs-conversion-server.sh) \
+    && test -n "$supported_php_versions" \
+    && wget https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz \
     && tar xzf ioncube_loaders_lin_x86-64.tar.gz \
-    && PHP_EXT_DIR_74=$(php7.4 -i | grep extension_dir | awk '{print $3}') \
-    && cp "ioncube/ioncube_loader_lin_7.4.so" $PHP_EXT_DIR_74 \
-    && echo "zend_extension=$PHP_EXT_DIR_74/ioncube_loader_lin_7.4.so" >> /etc/php/7.4/cli/php.ini \
-    && PHP_EXT_DIR_81=$(php8.1 -i | grep extension_dir | awk '{print $3}') \
-    && cp "ioncube/ioncube_loader_lin_8.1.so" $PHP_EXT_DIR_81 \
-    && echo "zend_extension=$PHP_EXT_DIR_81/ioncube_loader_lin_8.1.so" >> /etc/php/8.1/cli/php.ini \
+    && for supported_php_version in $supported_php_versions; do \
+        php_version=${supported_php_version#php}; \
+        php_ext_dir=$(php"$php_version" -i | awk '/^extension_dir =>/ { print $3; exit }'); \
+        cp "ioncube/ioncube_loader_lin_${php_version}.so" "$php_ext_dir"; \
+        echo "zend_extension=$php_ext_dir/ioncube_loader_lin_${php_version}.so" >> "/etc/php/${php_version}/cli/php.ini"; \
+    done \
     && rm -rf ioncube ioncube_loaders_lin_x86-64.tar.gz
 
 # Creation of necessary directories
 RUN mkdir -p /home/vsftpd/ /var/log/vsftpd /var/run/vsftpd/empty \
+             /usr/local/lib/kvs \
     && chown -R ftp:ftp /home/vsftpd/
 
 # Copy configuration files
@@ -93,17 +105,20 @@ COPY config/vsftpd-ftps_tls.conf /etc/vsftpd-ftps_tls.conf
 COPY --chmod=755 scripts/run-vsftpd.sh /usr/sbin/run-vsftpd.sh
 
 # Folder creation and cron job configuration script
+COPY scripts/user-support.sh /usr/local/lib/kvs/user-support.sh
+COPY --chmod=755 scripts/run-cron-task.sh /usr/local/bin/run-cron-task.sh
 COPY --chmod=755 scripts/create_folders.sh /usr/local/bin/create_folders.sh
 
-# Copy entrypoint script
+# Copy runtime scripts
+COPY --chmod=755 scripts/healthcheck.sh /usr/local/bin/healthcheck.sh
 COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Expose ports
-EXPOSE 20-22 990 21100-21110
+EXPOSE 20 21 990 21100-21110
 
-# Health check to verify vsftpd is running
+# Health check to verify required services are running
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD pgrep vsftpd || exit 1
+    CMD /usr/local/bin/healthcheck.sh
 
 # Start command
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
