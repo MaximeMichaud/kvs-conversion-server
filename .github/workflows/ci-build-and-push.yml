@@ -24,6 +24,9 @@ on:  # yamllint disable-line rule:truthy
       - 'Dockerfile'
       - '.github/workflows/**'
 
+env:
+  KVS_TEST_IMAGE: 'kvs-conversion-server:test'
+
 jobs:
   dockerfile-validation:
     name: Validate Dockerfile
@@ -49,8 +52,14 @@ jobs:
           additional_files: >-
             kvs-conversion-server.sh
             scripts/create_folders.sh
+            scripts/run-cron-task.sh
             scripts/run-vsftpd.sh
+            scripts/healthcheck.sh
             scripts/entrypoint.sh
+            scripts/php-support.sh
+            tests/testlib.bash
+            tests/project-metadata.bash
+            tests/runtime-validation.bash
             tests/info-password-recovery.bash
             tests/config-path-management.bash
 
@@ -64,6 +73,7 @@ jobs:
       - name: Run CLI behavior tests
         run: |
           for test_file in tests/*.bash; do
+            echo "Running $test_file"
             bash "$test_file"
           done
 
@@ -74,8 +84,974 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Load project defaults
+        run: |
+          source tests/testlib.bash
+          source scripts/user-support.sh
+          max_num_folders=$(require_script_default MAX_NUM_FOLDERS)
+          max_cron_log_bytes=$(require_script_default MAX_CRON_LOG_BYTES)
+          read -r -a supported_ftp_modes <<< "$(require_script_default SUPPORTED_FTP_MODES)"
+          {
+            echo "KVS_DEFAULT_PHP_VERSION=$(require_script_default DEFAULT_PHP_VERSION)"
+            echo "KVS_DEFAULT_NUM_FOLDERS=$(require_script_default DEFAULT_NUM_FOLDERS)"
+            echo "KVS_FTP_MODE_ERROR=FTP_MODE must be $(format_quoted_or_list "${supported_ftp_modes[@]}")"
+            echo "KVS_MAX_FTP_PASSWORD_LENGTH=$MAX_FTP_PASSWORD_LENGTH"
+            echo "KVS_MAX_NUM_FOLDERS=$max_num_folders"
+            echo "KVS_TOO_MANY_FOLDERS=$((max_num_folders + 1))"
+            echo "KVS_DEFAULT_CRON_LOG_BYTES=$(require_script_default DEFAULT_CRON_LOG_BYTES)"
+            echo "KVS_OVERSIZED_CRON_LOG_BYTES=${max_cron_log_bytes}0"
+            echo "KVS_RUNTIME_PHP_VERSIONS=$(read_dockerfile_php_cli_versions)"
+            echo "KVS_UNSUPPORTED_PHP_VERSION=$(pick_unsupported_php_version)"
+          } >> "$GITHUB_ENV"
+
       - name: Build Docker image for testing
-        run: docker build -t kvs-conversion-server:test .
+        run: docker build -t "$KVS_TEST_IMAGE" .
+
+      - name: Reject healthcheck without FTP listener
+        run: |
+          set +e
+          output=$(docker run --rm --entrypoint bash "$KVS_TEST_IMAGE" -lc '
+            set -e
+            cron
+            ln -sf /bin/sleep /tmp/vsftpd
+            /tmp/vsftpd 60 &
+            fake_pid=$!
+            trap "kill $fake_pid >/dev/null 2>&1 || true" EXIT
+            /usr/local/bin/healthcheck.sh
+          ' 2>&1)
+          status=$?
+          set -e
+
+          printf "%s\n" "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "healthcheck accepted a fake vsftpd process without an FTP listener"
+            exit 1
+          fi
+          grep -q "vsftpd is not listening on TCP port 21" <<< "$output"
+
+      - name: Reject invalid FTP usernames
+        run: |
+          check_rejected_user() {
+            local username="$1"
+            local expected_message="$2"
+            local safe_username="${username//[^A-Za-z0-9_.-]/_}"
+            local container_name="kvs-rejected-user-${safe_username}"
+            local log_file="/tmp/${container_name}.log"
+
+            set +e
+            docker run --name "$container_name" \
+              -e FTP_USER="$username" \
+              -e FTP_PASS=testpass123 \
+              -e PASV_ADDRESS=127.0.0.1 \
+              "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+            status=$?
+            docker rm "$container_name" >/dev/null 2>&1 || true
+            set -e
+
+            cat "$log_file"
+            if [ "$status" -eq 0 ]; then
+              echo "Container accepted rejected FTP username '$username'"
+              exit 1
+            fi
+            grep -q "$expected_message" "$log_file"
+          }
+
+          check_rejected_user root "FTP_USER 'root' is reserved by the container image"
+          check_rejected_user 12345 "FTP_USER cannot be purely numeric"
+          check_rejected_user bad/user "FTP_USER may only contain letters"
+          check_rejected_user -baduser "FTP_USER may only contain letters"
+          check_rejected_user .. "FTP_USER cannot be '.' or '..'"
+
+      - name: Reject invalid create_folders FTP username
+        run: |
+          log_file="/tmp/kvs-invalid-create-folders-user.log"
+          data_dir=$(mktemp -d)
+          cleanup() {
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/escape /target/vsftpd >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          set +e
+          docker run --rm --mount "type=bind,source=${data_dir},target=/home" \
+            --entrypoint /usr/local/bin/create_folders.sh \
+            -e FTP_USER='../escape' \
+            -e PHP_VERSION="$KVS_DEFAULT_PHP_VERSION" \
+            -e NUM_FOLDERS="$KVS_DEFAULT_NUM_FOLDERS" \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "create_folders accepted an invalid FTP username"
+            exit 1
+          fi
+          grep -q "FTP_USER may only contain letters" "$log_file"
+          if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$data_dir" -maxdepth 4 -printf '%M %u:%g %p\n'
+            echo "create_folders created home data before rejecting invalid FTP_USER"
+            exit 1
+          fi
+
+      - name: Reject symlinked FTP home
+        run: |
+          container_name=kvs-symlinked-ftp-home
+          data_dir=$(mktemp -d)
+          log_file="/tmp/${container_name}.log"
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+          ln -s /etc "$data_dir/testuser"
+
+          set +e
+          docker run --name "$container_name" \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ENABLE=NO \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted a symlinked FTP home"
+            exit 1
+          fi
+          grep -q "FTP user home must not be a symbolic link: /home/vsftpd/testuser" "$log_file"
+
+      - name: Reject symlinked FTP folder
+        run: |
+          container_name=kvs-symlinked-ftp-folder
+          data_dir=$(mktemp -d)
+          log_file="/tmp/${container_name}.log"
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+          mkdir "$data_dir/testuser"
+          ln -s /etc "$data_dir/testuser/01"
+
+          set +e
+          docker run --name "$container_name" \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ENABLE=NO \
+            -e NUM_FOLDERS=1 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted a symlinked FTP folder"
+            exit 1
+          fi
+          grep -q "FTP folder must not be a symbolic link: /home/vsftpd/testuser/01" "$log_file"
+
+      - name: Reject missing FTP password
+        run: |
+          log_file="/tmp/kvs-missing-ftp-password.log"
+
+          set +e
+          docker run --name kvs-missing-ftp-password \
+            -e FTP_USER=testuser \
+            -e PASV_ADDRESS=127.0.0.1 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-missing-ftp-password >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted missing FTP_PASS"
+            exit 1
+          fi
+          grep -q "FTP_PASS is required" "$log_file"
+
+      - name: Reject multiline FTP password
+        run: |
+          log_file="/tmp/kvs-multiline-ftp-password.log"
+          multiline_pass=$'testpass123\nroot:rootpass123'
+
+          set +e
+          docker run --name kvs-multiline-ftp-password \
+            -e FTP_USER=testuser \
+            -e FTP_PASS="$multiline_pass" \
+            -e PASV_ADDRESS=127.0.0.1 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-multiline-ftp-password >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted multiline FTP_PASS"
+            exit 1
+          fi
+          grep -q "FTP_PASS must not contain CR or LF characters" "$log_file"
+
+      - name: Reject oversized FTP password
+        run: |
+          log_file="/tmp/kvs-oversized-ftp-password.log"
+          data_dir=$(mktemp -d)
+          cleanup_oversized_ftp_password() {
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup_oversized_ftp_password EXIT
+          oversized_pass=$(head -c "$((KVS_MAX_FTP_PASSWORD_LENGTH + 1))" /dev/zero | tr '\0' A)
+
+          set +e
+          docker run --name kvs-oversized-ftp-password \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS="$oversized_pass" \
+            -e PASV_ADDRESS=127.0.0.1 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-oversized-ftp-password >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted oversized FTP_PASS"
+            exit 1
+          fi
+          grep -q "FTP_PASS must be $KVS_MAX_FTP_PASSWORD_LENGTH characters or fewer" "$log_file"
+          if grep -q "Creating user testuser" "$log_file"; then
+            echo "Container created the FTP user before rejecting oversized FTP_PASS"
+            exit 1
+          fi
+          if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+            echo "Container created FTP data before rejecting oversized FTP_PASS"
+            exit 1
+          fi
+
+      - name: Reject invalid PHP version
+        run: |
+          log_file="/tmp/kvs-invalid-php-version.log"
+
+          set +e
+          docker run --name kvs-invalid-php-version \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e PHP_VERSION="$KVS_UNSUPPORTED_PHP_VERSION" \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-php-version >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted invalid PHP_VERSION"
+            exit 1
+          fi
+          grep -q "PHP_VERSION must be" "$log_file"
+
+      - name: Reject invalid account IDs
+        run: |
+          check_rejected_account_id() {
+            local env_name="$1"
+            local env_value="$2"
+            local expected_message="$3"
+            local data_dir="${4:-}"
+            local safe_env_name="${env_name,,}"
+            safe_env_name="${safe_env_name//_/-}"
+            local safe_env_value="${env_value//[^A-Za-z0-9]/-}"
+            local container_name="kvs-invalid-${safe_env_name}-${safe_env_value}"
+            local log_file="/tmp/${container_name}.log"
+            local mount_args=()
+
+            if [ -n "$data_dir" ]; then
+              mount_args+=(--mount "type=bind,source=${data_dir},target=/home/vsftpd")
+            fi
+
+            set +e
+            docker run --name "$container_name" \
+              "${mount_args[@]}" \
+              -e FTP_USER=testuser \
+              -e FTP_PASS=testpass123 \
+              -e PASV_ADDRESS=127.0.0.1 \
+              -e "$env_name=$env_value" \
+              "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+            status=$?
+            docker rm "$container_name" >/dev/null 2>&1 || true
+            set -e
+
+            cat "$log_file"
+            if [ "$status" -eq 0 ]; then
+              echo "Container accepted invalid $env_name"
+              exit 1
+            fi
+            grep -q "$expected_message" "$log_file"
+          }
+
+          max_account_id=$(
+            docker run --rm --entrypoint bash "$KVS_TEST_IMAGE" -lc \
+              'source /usr/local/lib/kvs/user-support.sh; printf "%s\n" "$MAX_ACCOUNT_ID"'
+          )
+          oversized_account_id=$((max_account_id + 1))
+
+          oversized_data_dir=$(mktemp -d)
+          cleanup_oversized_data() {
+            docker run --rm --mount "type=bind,source=${oversized_data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$oversized_data_dir"
+          }
+          trap cleanup_oversized_data EXIT
+
+          check_rejected_account_id USER_ID 0 "USER_ID must be a positive integer greater than 0"
+          check_rejected_account_id GROUP_ID 0 "GROUP_ID must be a positive integer greater than 0"
+          check_rejected_account_id USER_ID "$oversized_account_id" "USER_ID must be between 1 and $max_account_id" "$oversized_data_dir"
+          check_rejected_account_id GROUP_ID "$oversized_account_id" "GROUP_ID must be between 1 and $max_account_id" "$oversized_data_dir"
+
+          if find "$oversized_data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$oversized_data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+            echo "Container created FTP data before rejecting oversized account IDs"
+            exit 1
+          fi
+
+      - name: Reject FTP user group collisions
+        run: |
+          conflicting_group=$(
+            docker run --rm --entrypoint awk "$KVS_TEST_IMAGE" -F: '
+              $1 !~ /^(root|daemon|bin|sys|sync|games|man|lp|mail|news|uucp|proxy|www-data|backup|list|irc|_apt|nobody|systemd-network|ftp)$/ &&
+              $1 ~ /^[A-Za-z0-9_.][A-Za-z0-9_.-]*$/ {
+                print $1
+                exit
+              }
+            ' /etc/group
+          )
+
+          if [ -z "$conflicting_group" ]; then
+            echo "Could not find a non-reserved group to test FTP user collisions"
+            exit 1
+          fi
+
+          log_file="/tmp/kvs-conflicting-ftp-group.log"
+
+          set +e
+          docker run --name kvs-conflicting-ftp-group \
+            -e FTP_USER="$conflicting_group" \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-conflicting-ftp-group >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted an FTP user that conflicts with an existing group"
+            exit 1
+          fi
+          grep -q "FTP_USER '$conflicting_group' conflicts with an existing container group" "$log_file"
+
+      - name: Reject invalid folder count
+        run: |
+          log_file="/tmp/kvs-invalid-folder-count.log"
+
+          set +e
+          docker run --name kvs-invalid-folder-count \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e NUM_FOLDERS=0 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-folder-count >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted invalid NUM_FOLDERS"
+            exit 1
+          fi
+          grep -q "NUM_FOLDERS must be a positive integer" "$log_file"
+
+      - name: Reject oversized folder count
+        run: |
+          log_file="/tmp/kvs-oversized-folder-count.log"
+
+          set +e
+          docker run --name kvs-oversized-folder-count \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e NUM_FOLDERS="$KVS_TOO_MANY_FOLDERS" \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-oversized-folder-count >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted oversized NUM_FOLDERS"
+            exit 1
+          fi
+          grep -q "NUM_FOLDERS must be between 1 and $KVS_MAX_NUM_FOLDERS" "$log_file"
+          if grep -q "crontab is too long" "$log_file"; then
+            echo "Oversized NUM_FOLDERS reached crontab generation before validation"
+            exit 1
+          fi
+
+      - name: Reject oversized cron log limit
+        run: |
+          log_file="/tmp/kvs-oversized-cron-log-limit.log"
+
+          set +e
+          docker run --name kvs-oversized-cron-log-limit \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e CRON_LOG_MAX_BYTES="$KVS_OVERSIZED_CRON_LOG_BYTES" \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-oversized-cron-log-limit >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted oversized CRON_LOG_MAX_BYTES"
+            exit 1
+          fi
+          grep -q "CRON_LOG_MAX_BYTES must be between 1 and" "$log_file"
+          if grep -q "command too long" "$log_file"; then
+            echo "Oversized CRON_LOG_MAX_BYTES reached crontab generation before validation"
+            exit 1
+          fi
+
+      - name: Reject invalid passive port range
+        run: |
+          check_rejected_passive_ports() {
+            local min_port="$1"
+            local max_port="$2"
+            local expected_message="$3"
+            local container_name="kvs-invalid-passive-${min_port}-${max_port}"
+            local log_file="/tmp/${container_name}.log"
+
+            set +e
+            docker run --name "$container_name" \
+              -e FTP_USER=testuser \
+              -e FTP_PASS=testpass123 \
+              -e PASV_ADDRESS=127.0.0.1 \
+              -e PASV_MIN_PORT="$min_port" \
+              -e PASV_MAX_PORT="$max_port" \
+              "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+            status=$?
+            docker rm "$container_name" >/dev/null 2>&1 || true
+            set -e
+
+            cat "$log_file"
+            if [ "$status" -eq 0 ]; then
+              echo "Container accepted invalid passive port range"
+              exit 1
+            fi
+            grep -q "$expected_message" "$log_file"
+          }
+
+          check_rejected_passive_ports abc 21110 "PASV_MIN_PORT and PASV_MAX_PORT must be positive integers"
+          check_rejected_passive_ports 1023 1023 "PASV_MIN_PORT and PASV_MAX_PORT must be valid passive TCP ports (1024-65535)"
+          check_rejected_passive_ports 65536 65536 "PASV_MIN_PORT and PASV_MAX_PORT must be valid passive TCP ports (1024-65535)"
+          check_rejected_passive_ports 21110 21100 "PASV_MIN_PORT must be less than or equal to PASV_MAX_PORT"
+
+      - name: Reject invalid passive address
+        run: |
+          check_rejected_passive_address() {
+            local pasv_address="$1"
+            local container_name="$2"
+            local expected_message="$3"
+            local log_file="/tmp/${container_name}.log"
+
+            set +e
+            docker run --name "$container_name" \
+              -e FTP_USER=testuser \
+              -e FTP_PASS=testpass123 \
+              -e PASV_ADDRESS="$pasv_address" \
+              "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+            status=$?
+            docker rm "$container_name" >/dev/null 2>&1 || true
+            set -e
+
+            cat "$log_file"
+            if [ "$status" -eq 0 ]; then
+              echo "Container accepted invalid passive address"
+              exit 1
+            fi
+            grep -q "$expected_message" "$log_file"
+          }
+
+          check_rejected_passive_address 999.999.999.999 kvs-invalid-passive-address-octets "PASV_ADDRESS must be a valid IPv4 address when PASV_ADDR_RESOLVE is NO"
+          check_rejected_passive_address not-a-real-kvs-host.invalid kvs-invalid-passive-address-hostname "PASV_ADDRESS must be a valid IPv4 address when PASV_ADDR_RESOLVE is NO"
+          check_rejected_passive_address 0.0.0.0 kvs-invalid-passive-address-unspecified "PASV_ADDRESS must not be 0.0.0.0 because FTP passive mode advertises it to clients"
+          check_rejected_passive_address 00.00.00.00 kvs-invalid-passive-address-zero-padded-unspecified "PASV_ADDRESS must not be 0.0.0.0 because FTP passive mode advertises it to clients"
+
+          log_file="/tmp/kvs-invalid-passive-address-unspecified-resolve.log"
+          set +e
+          timeout 30s docker run --name kvs-invalid-passive-address-unspecified-resolve \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=0.0.0.0 \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-passive-address-unspecified-resolve >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "Container accepted unspecified passive address with PASV_ADDR_RESOLVE=YES"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS must not be 0.0.0.0 because FTP passive mode advertises it to clients" "$log_file"
+
+          log_file="/tmp/kvs-invalid-passive-address-zero-padded-unspecified-resolve.log"
+          set +e
+          timeout 30s docker run --name kvs-invalid-passive-address-zero-padded-unspecified-resolve \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=00.00.00.00 \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-passive-address-zero-padded-unspecified-resolve >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "Container accepted zero-padded unspecified passive address with PASV_ADDR_RESOLVE=YES"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS must not be 0.0.0.0 because FTP passive mode advertises it to clients" "$log_file"
+
+          log_file="/tmp/kvs-passive-address-resolves-unspecified.log"
+          data_dir=$(mktemp -d)
+          cleanup_passive_address_resolves_unspecified() {
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup_passive_address_resolves_unspecified EXIT
+
+          set +e
+          timeout 30s docker run --name kvs-passive-address-resolves-unspecified \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=0 \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-passive-address-resolves-unspecified >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "Container accepted passive hostname resolving to 0.0.0.0"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS hostname must not resolve to 0.0.0.0 when PASV_ADDR_RESOLVE is YES: 0" "$log_file"
+          if grep -q "SSL certificate generated successfully" "$log_file"; then
+            echo "Container generated SSL certificates before rejecting passive hostname resolving to 0.0.0.0"
+            exit 1
+          fi
+          if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+            echo "Container created FTP data before rejecting passive hostname resolving to 0.0.0.0"
+            exit 1
+          fi
+          cleanup_passive_address_resolves_unspecified
+          trap - EXIT
+
+          log_file="/tmp/kvs-unresolved-passive-hostname.log"
+          data_dir=$(mktemp -d)
+          cleanup_unresolved_passive_hostname() {
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup_unresolved_passive_hostname EXIT
+
+          set +e
+          timeout 30s docker run --name kvs-unresolved-passive-hostname \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=not-a-real-kvs-host.invalid \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-unresolved-passive-hostname >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "Container accepted unresolved passive hostname"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS hostname must resolve to an IPv4 address when PASV_ADDR_RESOLVE is YES: not-a-real-kvs-host.invalid" "$log_file"
+          if grep -q "SSL certificate generated successfully" "$log_file"; then
+            echo "Container generated SSL certificates before rejecting unresolved passive hostname"
+            exit 1
+          fi
+          if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+            echo "Container created FTP data before rejecting unresolved passive hostname"
+            exit 1
+          fi
+          cleanup_unresolved_passive_hostname
+          trap - EXIT
+
+          log_file="/tmp/kvs-invalid-passive-address-run-vsftpd.log"
+          set +e
+          timeout 30s docker run --name kvs-invalid-passive-address-run-vsftpd \
+            --entrypoint /usr/sbin/run-vsftpd.sh \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=0.0.0.0 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-passive-address-run-vsftpd >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "run-vsftpd accepted unspecified passive address"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS must not be 0.0.0.0 because FTP passive mode advertises it to clients" "$log_file"
+
+          log_file="/tmp/kvs-unresolved-passive-hostname-run-vsftpd.log"
+          set +e
+          timeout 30s docker run --name kvs-unresolved-passive-hostname-run-vsftpd \
+            --entrypoint /usr/sbin/run-vsftpd.sh \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=not-a-real-kvs-host.invalid \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-unresolved-passive-hostname-run-vsftpd >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "run-vsftpd accepted unresolved passive hostname"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS hostname must resolve to an IPv4 address when PASV_ADDR_RESOLVE is YES: not-a-real-kvs-host.invalid" "$log_file"
+          if grep -q "Creating user testuser" "$log_file"; then
+            echo "run-vsftpd created the FTP user before rejecting unresolved passive hostname"
+            exit 1
+          fi
+
+          log_file="/tmp/kvs-passive-address-resolves-unspecified-run-vsftpd.log"
+          set +e
+          timeout 30s docker run --name kvs-passive-address-resolves-unspecified-run-vsftpd \
+            --entrypoint /usr/sbin/run-vsftpd.sh \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=0 \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-passive-address-resolves-unspecified-run-vsftpd >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "run-vsftpd accepted passive hostname resolving to 0.0.0.0"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS hostname must not resolve to 0.0.0.0 when PASV_ADDR_RESOLVE is YES: 0" "$log_file"
+          if grep -q "Creating user testuser" "$log_file"; then
+            echo "run-vsftpd created the FTP user before rejecting passive hostname resolving to 0.0.0.0"
+            exit 1
+          fi
+
+          log_file="/tmp/kvs-invalid-passive-address-zero-padded-run-vsftpd.log"
+          set +e
+          timeout 30s docker run --name kvs-invalid-passive-address-zero-padded-run-vsftpd \
+            --entrypoint /usr/sbin/run-vsftpd.sh \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=00.00.00.00 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-passive-address-zero-padded-run-vsftpd >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+            echo "run-vsftpd accepted zero-padded unspecified passive address"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS must not be 0.0.0.0 because FTP passive mode advertises it to clients" "$log_file"
+
+      - name: Reject multiline passive address
+        run: |
+          log_file="/tmp/kvs-multiline-passive-address.log"
+          multiline_address=$'localhost\nlisten_port=2021'
+
+          set +e
+          docker run --name kvs-multiline-passive-address \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS="$multiline_address" \
+            -e PASV_ADDR_RESOLVE=YES \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-multiline-passive-address >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted multiline PASV_ADDRESS"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS must not contain CR or LF characters" "$log_file"
+
+      - name: Reject missing passive address
+        run: |
+          log_file="/tmp/kvs-missing-passive-address.log"
+          data_dir=$(mktemp -d)
+          cleanup() {
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          set +e
+          docker run --name kvs-missing-passive-address \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-missing-passive-address >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted missing PASV_ADDRESS"
+            exit 1
+          fi
+          grep -q "PASV_ADDRESS or PASV_ADDRESS_INTERFACE is required when passive FTP is enabled" "$log_file"
+          if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+            echo "Container created FTP data before rejecting missing PASV_ADDRESS"
+            exit 1
+          fi
+
+      - name: Reject invalid passive interface before side effects
+        run: |
+          log_file="/tmp/kvs-invalid-passive-interface.log"
+          data_dir=$(mktemp -d)
+          cleanup() {
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          set +e
+          docker run --name kvs-invalid-passive-interface \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS_INTERFACE=definitely-not-a-real-iface \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-passive-interface >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted invalid PASV_ADDRESS_INTERFACE"
+            exit 1
+          fi
+          grep -q "Could not find IP for interface 'definitely-not-a-real-iface'" "$log_file"
+          if grep -q "SSL certificate generated successfully" "$log_file"; then
+            echo "Container generated SSL certificates before rejecting invalid PASV_ADDRESS_INTERFACE"
+            exit 1
+          fi
+          if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+            find "$data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+            echo "Container created FTP data before rejecting invalid PASV_ADDRESS_INTERFACE"
+            exit 1
+          fi
+
+      - name: Reject invalid passive mode toggle
+        run: |
+          log_file="/tmp/kvs-invalid-passive-toggle.log"
+
+          set +e
+          docker run --name kvs-invalid-passive-toggle \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ADDRESS=127.0.0.1 \
+            -e PASV_ENABLE=maybe \
+            "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+          status=$?
+          docker rm kvs-invalid-passive-toggle >/dev/null 2>&1 || true
+          set -e
+
+          cat "$log_file"
+          if [ "$status" -eq 0 ]; then
+            echo "Container accepted invalid PASV_ENABLE"
+            exit 1
+          fi
+          grep -q "PASV_ENABLE must be 'YES' or 'NO'" "$log_file"
+
+      - name: Reject invalid run-vsftpd options before side effects
+        run: |
+          check_rejected_run_vsftpd_option() {
+            local container_name="$1"
+            local expected_message="$2"
+            shift 2
+
+            local data_dir
+            local log_file
+            data_dir=$(mktemp -d)
+            log_file="/tmp/${container_name}.log"
+
+            set +e
+            docker run --name "$container_name" \
+              --entrypoint /usr/sbin/run-vsftpd.sh \
+              --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+              -e FTP_USER=testuser \
+              -e FTP_PASS=testpass123 \
+              -e PASV_ENABLE=NO \
+              "$@" \
+              "$KVS_TEST_IMAGE" > "$log_file" 2>&1
+            status=$?
+            docker rm "$container_name" >/dev/null 2>&1 || true
+            set -e
+
+            cat "$log_file"
+            if [ "$status" -eq 0 ]; then
+              echo "run-vsftpd accepted invalid options for $container_name"
+              exit 1
+            fi
+            grep -q "$expected_message" "$log_file"
+
+            if find "$data_dir" -mindepth 1 -print -quit | grep -q .; then
+              find "$data_dir" -maxdepth 3 -printf '%M %u:%g %p\n'
+              echo "run-vsftpd created FTP data before rejecting invalid options for $container_name"
+              exit 1
+            fi
+
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+
+          check_rejected_run_vsftpd_option \
+            kvs-invalid-run-vsftpd-mode \
+            "$KVS_FTP_MODE_ERROR" \
+            -e FTP_MODE=badmode
+
+          check_rejected_run_vsftpd_option \
+            kvs-invalid-run-vsftpd-log-stdout \
+            "LOG_STDOUT available options are 'YES' or 'NO'" \
+            -e LOG_STDOUT=maybe
+
+      - name: Allow disabled passive FTP to ignore passive address
+        run: |
+          data_dir=$(mktemp -d)
+          container_name=kvs-passive-disabled-address
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            docker run --rm --mount "type=bind,source=${data_dir},target=/target" \
+              --entrypoint rm "$KVS_TEST_IMAGE" -rf /target/testuser >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container_name" \
+            --mount "type=bind,source=${data_dir},target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ENABLE=NO \
+            -e PASV_ADDRESS=not-an-ip \
+            "$KVS_TEST_IMAGE"
+
+          # shellcheck disable=SC2016
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-passive-disabled-address)" == "healthy" ]; do
+            echo "Container status: $(docker inspect --format="{{.State.Status}} exit={{.State.ExitCode}} health={{.State.Health.Status}}" kvs-passive-disabled-address)";
+            sleep 3;
+          done'
+
+          docker logs "$container_name" | grep -q "Passive FTP is disabled"
+          docker exec "$container_name" grep -Fq "pasv_enable=NO" /etc/vsftpd.conf
+          docker exec "$container_name" sh -lc '! grep -Fq "pasv_address=not-an-ip" /etc/vsftpd.conf'
+
+      - name: Allow disabled passive FTP to ignore passive ports
+        run: |
+          container_name=kvs-passive-disabled-ports
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container_name" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ENABLE=NO \
+            -e PASV_MIN_PORT=1 \
+            -e PASV_MAX_PORT=1 \
+            "$KVS_TEST_IMAGE"
+
+          # shellcheck disable=SC2016
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-passive-disabled-ports)" == "healthy" ]; do
+            echo "Container status: $(docker inspect --format="{{.State.Status}} exit={{.State.ExitCode}} health={{.State.Health.Status}}" kvs-passive-disabled-ports)";
+            sleep 3;
+          done'
+
+          docker logs "$container_name" | grep -q "Passive FTP is disabled"
+          docker exec "$container_name" grep -Fq "pasv_enable=NO" /etc/vsftpd.conf
+          docker exec "$container_name" sh -lc '! grep -Fq "pasv_min_port=1" /etc/vsftpd.conf'
+          docker exec "$container_name" sh -lc '! grep -Fq "pasv_max_port=1" /etc/vsftpd.conf'
+
+      - name: Allow disabled passive FTP to ignore passive resolve toggle
+        run: |
+          container_name=kvs-passive-disabled-resolve
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container_name" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ENABLE=NO \
+            -e PASV_ADDR_RESOLVE=maybe \
+            "$KVS_TEST_IMAGE"
+
+          # shellcheck disable=SC2016
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-passive-disabled-resolve)" == "healthy" ]; do
+            echo "Container status: $(docker inspect --format="{{.State.Status}} exit={{.State.ExitCode}} health={{.State.Health.Status}}" kvs-passive-disabled-resolve)";
+            sleep 3;
+          done'
+
+          docker logs "$container_name" | grep -q "Passive FTP is disabled"
+          docker exec "$container_name" grep -Fq "pasv_enable=NO" /etc/vsftpd.conf
+          docker exec "$container_name" sh -lc '! grep -Fq "pasv_addr_resolve=maybe" /etc/vsftpd.conf'
 
       - name: Run Docker container
         run: |
@@ -83,11 +1059,91 @@ jobs:
             -e FTP_USER=testuser \
             -e FTP_PASS=testpass123 \
             -e PASV_ADDRESS=127.0.0.1 \
-            -e NUM_FOLDERS=3 \
-            -e PHP_VERSION=php8.1 \
+            -e NUM_FOLDERS="$KVS_DEFAULT_NUM_FOLDERS" \
+            -e PHP_VERSION="$KVS_DEFAULT_PHP_VERSION" \
             -e LOG_STDOUT=NO \
             -p 21:21 -p 21100-21110:21100-21110 \
-            kvs-conversion-server:test
+            "$KVS_TEST_IMAGE"
+
+      - name: Direct Docker restart stays healthy
+        run: |
+          docker stop kvs-test
+          docker start kvs-test
+          # shellcheck disable=SC2016
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test)" == "healthy" ]; do
+            echo "Container status: $(docker inspect --format="{{.State.Status}} exit={{.State.ExitCode}} health={{.State.Health.Status}}" kvs-test)";
+            sleep 3;
+          done'
+          docker exec kvs-test id testuser
+
+      - name: Preserve bind-mounted file ownership on startup
+        run: |
+          data_dir=$(mktemp -d)
+          container_name=kvs-bind-ownership
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            docker run --rm --entrypoint /bin/chown --mount "type=bind,source=$data_dir,target=/data" "$KVS_TEST_IMAGE" -R "$(id -u):$(id -g)" /data >/dev/null 2>&1 || true
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$data_dir/testuser/01"
+          chmod 700 "$data_dir"
+          printf 'existing file\n' > "$data_dir/testuser/01/existing.txt"
+          before_base_mode=$(stat -c '%a' "$data_dir")
+          before_base_owner=$(stat -c '%u:%g' "$data_dir")
+          before_owner=$(stat -c '%u:%g' "$data_dir/testuser/01/existing.txt")
+
+          docker run -d --name "$container_name" \
+            --mount "type=bind,source=$data_dir,target=/home/vsftpd" \
+            -e FTP_USER=testuser \
+            -e FTP_PASS=testpass123 \
+            -e PASV_ENABLE=NO \
+            -e USER_ID=12345 \
+            -e GROUP_ID=12345 \
+            "$KVS_TEST_IMAGE"
+
+          for _ in $(seq 1 40); do
+            if docker logs "$container_name" 2>&1 | grep -q "Running vsftpd"; then
+              break
+            fi
+            sleep 3
+          done
+          docker logs "$container_name" 2>&1 | grep -q "Running vsftpd"
+
+          after_owner=$(stat -c '%u:%g' "$data_dir/testuser/01/existing.txt")
+          if [ "$after_owner" != "$before_owner" ]; then
+            echo "Existing bind-mounted file owner changed from $before_owner to $after_owner"
+            exit 1
+          fi
+
+          after_base_owner=$(stat -c '%u:%g' "$data_dir")
+          if [ "$after_base_owner" != "$before_base_owner" ]; then
+            echo "Bind-mounted data root owner changed from $before_base_owner to $after_base_owner"
+            exit 1
+          fi
+
+          after_base_mode=$(stat -c '%a' "$data_dir")
+          if [ $((8#$after_base_mode & 7)) -ne 0 ]; then
+            echo "Bind-mounted data root other permissions changed from $before_base_mode to $after_base_mode"
+            exit 1
+          fi
+
+          folder_owner=$(stat -c '%u:%g' "$data_dir/testuser/01")
+          if [ "$folder_owner" != "12345:12345" ]; then
+            echo "Managed FTP folder owner is $folder_owner, expected 12345:12345"
+            exit 1
+          fi
+
+          docker exec "$container_name" su -s /bin/bash testuser -c 'printf ok > /home/vsftpd/testuser/01/write-test.txt'
+          test "$(cat "$data_dir/testuser/01/write-test.txt")" = "ok"
+
+          if docker run --rm --entrypoint /bin/bash --user 65534:65534 \
+            --mount "type=bind,source=$data_dir,target=/data" \
+            "$KVS_TEST_IMAGE" -lc 'cat /data/testuser/01/write-test.txt'; then
+            echo "Unprivileged users can read private bind-mounted FTP data"
+            exit 1
+          fi
 
       - name: Wait for container to be healthy
         run: |
@@ -108,7 +1164,7 @@ jobs:
           docker exec kvs-test pgrep cron || (echo "cron not running!" && exit 1)
 
           echo "=== Checking PHP version ==="
-          docker exec kvs-test php8.1 --version
+          docker exec kvs-test "$KVS_DEFAULT_PHP_VERSION" --version
 
           echo "=== Checking FTP folders created ==="
           docker exec kvs-test ls -la /home/vsftpd/testuser/
@@ -116,8 +1172,34 @@ jobs:
           docker exec kvs-test test -d /home/vsftpd/testuser/02 || (echo "Folder 02 not created!" && exit 1)
           docker exec kvs-test test -d /home/vsftpd/testuser/03 || (echo "Folder 03 not created!" && exit 1)
 
+          echo "=== Checking unattended-upgrades origins ==="
+          codename=$(docker exec kvs-test sh -lc '. /etc/os-release && printf "%s" "$VERSION_CODENAME"')
+          docker exec kvs-test grep -F "codename=${codename},label=Debian" /etc/apt/apt.conf.d/50unattended-upgrades
+          docker exec kvs-test sh -lc '! grep -Fq "codename=,label=Debian" /etc/apt/apt.conf.d/50unattended-upgrades'
+
       - name: Install FTP client
-        run: sudo apt-get update && sudo apt-get install -y lftp netcat-openbsd
+        run: |
+          if command -v lftp >/dev/null && command -v nc >/dev/null; then
+            echo "FTP client tools are already installed"
+            exit 0
+          fi
+
+          for attempt in 1 2 3; do
+            echo "Installing FTP client tools (attempt ${attempt})"
+            if timeout 180s sudo apt-get update && timeout 180s sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends lftp netcat-openbsd; then
+              echo "FTP client tools installed"
+              exit 0
+            fi
+
+            if [[ "$attempt" -lt 3 ]]; then
+              echo "FTP client install attempt ${attempt} failed; retrying..."
+              sudo apt-get clean
+              sleep 5
+            fi
+          done
+
+          echo "Failed to install FTP client tools after 3 attempts" >&2
+          exit 1
 
       - name: Test FTP connection with curl
         run: |
@@ -144,26 +1226,28 @@ jobs:
 
       - name: Comprehensive functionality tests
         run: |
-          echo "=== Testing PHP 7.4 functionality ==="
-          docker exec kvs-test php7.4 --version || (echo "PHP 7.4 not working!" && exit 1)
-          docker exec kvs-test php7.4 -r "echo 'PHP 7.4 execution: OK' . PHP_EOL;" || (echo "PHP 7.4 execution failed!" && exit 1)
+          for php_bin in $KVS_RUNTIME_PHP_VERSIONS; do
+            echo "=== Testing $php_bin functionality ==="
+            docker exec kvs-test "$php_bin" --version || (echo "$php_bin not working!" && exit 1)
+            docker exec kvs-test "$php_bin" -r "echo '$php_bin execution: OK' . PHP_EOL;" || (echo "$php_bin execution failed!" && exit 1)
+          done
 
-          echo "=== Testing PHP 8.1 functionality ==="
-          docker exec kvs-test php8.1 --version || (echo "PHP 8.1 not working!" && exit 1)
-          docker exec kvs-test php8.1 -r "echo 'PHP 8.1 execution: OK' . PHP_EOL;" || (echo "PHP 8.1 execution failed!" && exit 1)
-
-          echo "=== Checking IonCube Loader (optional) ==="
-          if docker exec kvs-test php8.1 -r "phpinfo();" | grep -qi "ioncube"; then
-            echo "✓ IonCube is loaded for PHP 8.1"
-          else
-            echo "ℹ IonCube not loaded (optional component)"
-          fi
+          echo "=== Checking IonCube Loader ==="
+          for php_bin in $KVS_RUNTIME_PHP_VERSIONS; do
+            if ! docker exec kvs-test "$php_bin" -m | grep -Fx "ionCube Loader"; then
+              echo "$php_bin IonCube Loader missing!"
+              exit 1
+            fi
+            echo "✓ IonCube is loaded for $php_bin"
+          done
 
           echo "=== Testing critical PHP extensions ==="
-          docker exec kvs-test php8.1 -m | grep -E "curl" || (echo "curl extension missing!" && exit 1)
-          docker exec kvs-test php8.1 -m | grep -E "gd" || (echo "gd extension missing!" && exit 1)
-          docker exec kvs-test php8.1 -m | grep -E "mbstring" || (echo "mbstring extension missing!" && exit 1)
-          docker exec kvs-test php8.1 -v | grep -iq "opcache" || (echo "opcache extension missing!" && exit 1)
+          for php_bin in $KVS_RUNTIME_PHP_VERSIONS; do
+            docker exec kvs-test "$php_bin" -m | grep -E "^curl$" || (echo "$php_bin curl extension missing!" && exit 1)
+            docker exec kvs-test "$php_bin" -m | grep -E "^gd$" || (echo "$php_bin gd extension missing!" && exit 1)
+            docker exec kvs-test "$php_bin" -m | grep -E "^mbstring$" || (echo "$php_bin mbstring extension missing!" && exit 1)
+            docker exec kvs-test "$php_bin" -v | grep -iq "opcache" || (echo "$php_bin opcache extension missing!" && exit 1)
+          done
 
           echo "=== Testing FFmpeg ==="
           docker exec kvs-test ffmpeg -version || (echo "FFmpeg not working!" && exit 1)
@@ -186,6 +1270,134 @@ jobs:
           echo ""
           echo "=== ✅ All critical functionality tests passed! ==="
 
+      - name: Verify cron working directory
+        run: |
+          docker exec kvs-test sh -lc 'cat > /home/vsftpd/testuser/01/remote_cron.php <<'"'"'PHP'"'"'
+          <?php
+          $result = @file_put_contents("relative-output.txt", "ok\n");
+          file_put_contents("/tmp/kvs-cron-cwd", "cwd=" . getcwd() . " result=" . var_export($result, true) . "\n");
+          PHP
+          chown testuser:testuser /home/vsftpd/testuser/01/remote_cron.php
+          rm -f /tmp/kvs-cron-cwd /home/vsftpd/testuser/01/relative-output.txt /root/relative-output.txt'
+
+          timeout 90s bash -c 'until docker exec kvs-test test -f /tmp/kvs-cron-cwd; do sleep 2; done'
+          docker exec kvs-test cat /tmp/kvs-cron-cwd
+          docker exec kvs-test grep -q '^cwd=/home/vsftpd/testuser/01 ' /tmp/kvs-cron-cwd
+          docker exec kvs-test test -f /home/vsftpd/testuser/01/relative-output.txt
+          docker exec kvs-test test ! -f /root/relative-output.txt
+          echo "Cron executed remote_cron.php from its folder"
+
+      - name: Remove stale unmarked cron jobs
+        run: |
+          docker exec kvs-test sh -lc 'set -e
+          expected_num_folders='"$KVS_DEFAULT_NUM_FOLDERS"'
+          printf "%s\n" \
+            "* * * * * [ -f /home/vsftpd/testuser/100/remote_cron.php ] && /usr/bin/'"$KVS_DEFAULT_PHP_VERSION"' /home/vsftpd/testuser/100/remote_cron.php >> /var/log/cron100.log 2>&1" \
+            "* * * * * true # keep remote_cron.php >> /var/log/cron99.log" | crontab -
+          FTP_USER=testuser PHP_VERSION='"$KVS_DEFAULT_PHP_VERSION"' NUM_FOLDERS="$expected_num_folders" /usr/local/bin/create_folders.sh
+          crontab -l > /tmp/kvs-crontab-after-create-folders
+          if crontab -l | grep -q "/var/log/cron100.log"; then
+            crontab -l
+            echo "stale unmarked cron100 job was not removed"
+            exit 1
+          fi
+          if ! grep -Fq "true # keep remote_cron.php >> /var/log/cron99.log" /tmp/kvs-crontab-after-create-folders; then
+            crontab -l
+            echo "unrelated cron line was removed"
+            exit 1
+          fi
+          test "$(grep -c /usr/local/bin/run-cron-task.sh /tmp/kvs-crontab-after-create-folders)" -eq "$expected_num_folders"'
+
+      - name: Verify cron task log truncation
+        run: |
+          docker exec kvs-test sh -lc 'cat > /home/vsftpd/testuser/01/remote_cron.php <<'"'"'PHP'"'"'
+          <?php echo "OK";
+          PHP
+          chown testuser:testuser /home/vsftpd/testuser/01/remote_cron.php
+          truncate -s '"$KVS_DEFAULT_CRON_LOG_BYTES"' /var/log/cron01.log
+          CRON_LOG_MAX_BYTES='"$KVS_DEFAULT_CRON_LOG_BYTES"' /usr/local/bin/run-cron-task.sh /home/vsftpd/testuser/01 '"$KVS_DEFAULT_PHP_VERSION"' testuser /var/log/cron01.log >> /var/log/cron01.log 2>&1
+          test "$(stat -c %s /var/log/cron01.log)" -eq 2
+          grep -qx "OK" /var/log/cron01.log'
+
+      - name: Verify cron task overlap protection
+        run: |
+          docker exec kvs-test sh -lc 'cat > /home/vsftpd/testuser/01/remote_cron.php <<'"'"'PHP'"'"'
+          <?php
+          file_put_contents("/tmp/kvs-cron-overlap", getmypid() . " start\n", FILE_APPEND);
+          sleep(20);
+          file_put_contents("/tmp/kvs-cron-overlap", getmypid() . " end\n", FILE_APPEND);
+          PHP
+          chown testuser:testuser /home/vsftpd/testuser/01/remote_cron.php
+          rm -f /tmp/kvs-cron-overlap /tmp/kvs-cron-overlap-run-1.log /tmp/kvs-cron-overlap-run-2.log
+          CRON_LOG_MAX_BYTES='"$KVS_DEFAULT_CRON_LOG_BYTES"' /usr/local/bin/run-cron-task.sh /home/vsftpd/testuser/01 '"$KVS_DEFAULT_PHP_VERSION"' testuser /tmp/cron01.log > /tmp/kvs-cron-overlap-run-1.log 2>&1 &
+          CRON_LOG_MAX_BYTES='"$KVS_DEFAULT_CRON_LOG_BYTES"' /usr/local/bin/run-cron-task.sh /home/vsftpd/testuser/01 '"$KVS_DEFAULT_PHP_VERSION"' testuser /tmp/cron01.log > /tmp/kvs-cron-overlap-run-2.log 2>&1 &
+          sleep 2
+          test "$(grep -c " start$" /tmp/kvs-cron-overlap)" -eq 1
+          grep -h "Skipping /home/vsftpd/testuser/01 because a previous cron task is still running" /tmp/kvs-cron-overlap-run-1.log /tmp/kvs-cron-overlap-run-2.log
+          wait'
+
+      - name: Healthcheck command fails when vsftpd stops responding
+        run: |
+          docker exec kvs-test pkill -STOP -x vsftpd
+          trap 'docker exec kvs-test pkill -CONT -x vsftpd >/dev/null 2>&1 || true' EXIT
+
+          set +e
+          output=$(docker exec kvs-test /usr/local/bin/healthcheck.sh 2>&1)
+          status=$?
+          set -e
+
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Healthcheck accepted stopped vsftpd"
+            exit 1
+          fi
+          grep -q "vsftpd has no live process" <<< "$output"
+
+          docker exec kvs-test pkill -CONT -x vsftpd
+          trap - EXIT
+          echo "Healthcheck rejected stopped vsftpd"
+
+      - name: Healthcheck command fails when cron stops responding
+        run: |
+          docker exec kvs-test pkill -STOP -x cron
+          trap 'docker exec kvs-test pkill -CONT -x cron >/dev/null 2>&1 || true' EXIT
+
+          set +e
+          output=$(docker exec kvs-test /usr/local/bin/healthcheck.sh 2>&1)
+          status=$?
+          set -e
+
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Healthcheck accepted stopped cron"
+            exit 1
+          fi
+          grep -q "cron has no live process" <<< "$output"
+
+          docker exec kvs-test pkill -CONT -x cron
+          trap - EXIT
+          echo "Healthcheck rejected stopped cron"
+
+      - name: Healthcheck fails when cron stops
+        run: |
+          docker exec kvs-test pkill cron
+          # shellcheck disable=SC2016
+          timeout 120s bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" kvs-test)" == "unhealthy" ]; do
+            echo "Container health: $(docker inspect --format="{{.State.Health.Status}}" kvs-test)";
+            sleep 3;
+          done'
+          echo "Healthcheck reported cron failure"
+
+      - name: Stop container cleanly
+        run: |
+          docker stop -t 2 kvs-test
+          exit_code=$(docker inspect --format='{{.State.ExitCode}}' kvs-test)
+          if [ "$exit_code" -eq 137 ]; then
+            echo "Container was killed during stop"
+            exit 1
+          fi
+          echo "Container stopped cleanly with exit code $exit_code"
+
       - name: Show container logs on failure
         if: failure()
         run: |
@@ -207,8 +1419,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Load project defaults
+        run: |
+          source tests/testlib.bash
+          {
+            echo "KVS_DEFAULT_PHP_VERSION=$(require_script_default DEFAULT_PHP_VERSION)"
+            echo "KVS_DEFAULT_NUM_FOLDERS=$(require_script_default DEFAULT_NUM_FOLDERS)"
+          } >> "$GITHUB_ENV"
+
       - name: Build Docker image for testing
-        run: docker build -t kvs-conversion-server:test .
+        run: docker build -t "$KVS_TEST_IMAGE" .
 
       - name: Run Docker container with FTPS Explicit mode
         run: |
@@ -216,12 +1436,12 @@ jobs:
             -e FTP_USER=testuser \
             -e FTP_PASS=testpass123 \
             -e PASV_ADDRESS=127.0.0.1 \
-            -e NUM_FOLDERS=3 \
-            -e PHP_VERSION=php8.1 \
+            -e NUM_FOLDERS="$KVS_DEFAULT_NUM_FOLDERS" \
+            -e PHP_VERSION="$KVS_DEFAULT_PHP_VERSION" \
             -e FTP_MODE=ftps \
             -e LOG_STDOUT=NO \
             -p 21:21 -p 21100-21110:21100-21110 \
-            kvs-conversion-server:test
+            "$KVS_TEST_IMAGE"
 
       - name: Wait for container to be healthy
         run: |
@@ -289,7 +1509,7 @@ jobs:
         run: |
           docker stop kvs-test-ftps || true
           docker rm kvs-test-ftps || true
-          docker rmi kvs-conversion-server:test || true
+          docker rmi "$KVS_TEST_IMAGE" || true
 
   build-and-push-docker:
     needs: [shellcheck, dockerfile-validation, script-tests, integration-test, integration-test-ftps]
@@ -313,6 +1533,11 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Release tag must use vMAJOR.MINOR.PATCH format"
+            exit 1
+          fi
+          default_image_tag=$(awk -F= '$1 == "DEFAULT_IMAGE_TAG" { gsub(/"/, "", $2); print $2; exit }' kvs-conversion-server.sh)
+          if [[ "$default_image_tag" != "$version" ]]; then
+            echo "Release tag v${version} must match DEFAULT_IMAGE_TAG (${default_image_tag})"
             exit 1
           fi
           echo "VERSION=$version" >>"${GITHUB_ENV}"
